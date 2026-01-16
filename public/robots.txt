@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+
+# Block API routes
+Disallow: /api/
+Disallow: /dashboard/
+
+# Allow specific public API endpoints if needed
+# Allow: /api/public/
+
+# Sitemap
+Sitemap: https://almofasser.com/sitemap.xml
+
+# Crawl-delay (optional, be careful)
+# Crawl-delay: 1

@@ -1,0 +1,77 @@
+import type { Metadata } from "next";
+import { Cairo } from "next/font/google";
+import "./globals.css";
+
+const cairo = Cairo({
+  subsets: ["arabic"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+  variable: "--font-cairo",
+  display: "swap",
+});
+
+export const metadata: Metadata = {
+  title: "المفسر | أكبر موقع عربي لتفسير الأحلام والرؤى",
+  description: "موقع المفسر لتفسير الأحلام مجاناً - اكتب حلمك واحصل على تفسير فوري بالذكاء الاصطناعي وفق منهج ابن سيرين والنابلسي. قاموس تفسير الأحلام بالحروف، تفسير الرؤى بالقرآن والسنة، مع مفسرين حقيقيين معتمدين.",
+  keywords: "تفسير الأحلام مجانا, تفسير الأحلام بالذكاء الاصطناعي, تفسير الاحلام لابن سيرين, تفسير حلم, قاموس تفسير الأحلام بالحروف, موقع تفسير الأحلام, تفسير الأحلام مجانا اكتب حلمك, تفسير الرؤى, النابلسي, تفسير الأحلام بالقران والسنة, تعبير الرؤيا",
+  authors: [{ name: "المُفسِّر", url: "https://almofasser.com" }],
+  creator: "المُفسِّر",
+  publisher: "المُفسِّر",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  openGraph: {
+    title: "تفسير الأحلام مجاناً | المفسر - اكتب حلمك وفسره فوراً",
+    description: "موقع المفسر لتفسير الأحلام مجاناً بالذكاء الاصطناعي وفق منهج ابن سيرين والنابلسي. قاموس الرموز، تفسير بالقرآن والسنة، ومفسرين حقيقيين.",
+    locale: "ar_SA",
+    type: "website",
+    siteName: "المُفسِّر",
+    url: "https://almofasser.com",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "تفسير الأحلام مجاناً | المفسر",
+    description: "اكتب حلمك واحصل على تفسير فوري بالذكاء الاصطناعي وفق ابن سيرين والنابلسي",
+    creator: "@almofasser",
+  },
+  alternates: {
+    canonical: "https://almofasser.com",
+    languages: {
+      'ar': 'https://almofasser.com',
+    },
+  },
+  category: "تفسير الأحلام",
+  verification: {
+    google: "YOUR_GOOGLE_VERIFICATION_CODE",
+  },
+};
+
+import { AuthProvider } from "@/context/AuthContext";
+import { HomePageJsonLd } from "@/components/seo/JsonLdScript";
+import StarBackground from "@/components/ui/StarBackground";
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="ar" dir="rtl" className={cairo.variable} suppressHydrationWarning>
+      <body suppressHydrationWarning>
+        <HomePageJsonLd />
+        <StarBackground />
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
+    </html>
+  );
+}
+
