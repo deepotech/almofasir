@@ -8,6 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Zap, User as UserIcon, Shield, CreditCard, Lock, ArrowLeft, Clock, Star } from 'lucide-react';
 
 import { PLANS } from '@/lib/pricing';
+import PayPalPayment from '@/components/payments/PayPalPayment';
 
 const PLAN_DETAILS: Record<string, { name: string; price: string; priceValue: number }> = {
     'ai-single': { name: PLANS['ai-single'].name, price: `$${PLANS['ai-single'].price}`, priceValue: PLANS['ai-single'].price },
@@ -127,7 +128,7 @@ function CheckoutContent() {
     const isAI = method === 'ai';
     const isHumanDream = type === 'human-dream';
 
-    const handlePayment = async () => {
+    const handlePayment = async (payPalOrderData?: any) => {
         console.log('🚀 [Checkout] handlePayment CALLED');
 
         // CRITICAL: Multiple layers of duplicate prevention
@@ -212,8 +213,8 @@ function CheckoutContent() {
                     }
                 }
 
-                // Step 3: Mock payment success - update payment status
-                await fetch(`/api/payment/mock-success`, {
+                // Step 3: REAL payment capture - update payment status
+                await fetch(`/api/payment/capture`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -221,7 +222,8 @@ function CheckoutContent() {
                     },
                     body: JSON.stringify({
                         orderId: orderId,
-                        type: 'human-dream'
+                        type: 'human-dream',
+                        payPalOrderId: payPalOrderData?.id
                     })
                 });
 
@@ -241,12 +243,13 @@ function CheckoutContent() {
                     })
                 });
             } else {
-                res = await fetch('/api/payment/mock-success', {
+                res = await fetch('/api/payment/capture', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         planId,
-                        userId: user?.uid
+                        userId: user?.uid,
+                        payPalOrderId: payPalOrderData?.id
                     })
                 });
             }
@@ -381,32 +384,22 @@ function CheckoutContent() {
 
                     {/* Payment Buttons */}
                     <div className="space-y-4">
-                        <button
-                            onClick={handlePayment}
-                            disabled={isProcessing}
-                            className={`
-                                w-full py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-3
-                                ${isProcessing
-                                    ? 'bg-gray-700 cursor-not-allowed opacity-70'
-                                    : 'bg-[#0070ba] hover:bg-[#005ea6] text-white'
-                                }
-                            `}
-                        >
-                            {isProcessing ? (
-                                <>
-                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                    <span>جاري المعالجة...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-                                        <path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944 3.72a.77.77 0 0 1 .757-.65h6.608c2.285 0 4.163.636 5.085 2.145.43.703.604 1.464.6 2.355-.006 1.015-.274 1.934-.598 2.719-.614 1.493-1.673 2.614-3.003 3.275-1.225.608-2.647.883-4.23.883H8.196a.833.833 0 0 0-.82.699l-.3 1.9-1 6.33v-.039z" />
-                                        <path d="M18.393 7.09c-.083 3.532-2.468 5.748-5.968 5.748H10.7a.681.681 0 0 0-.672.574l-.918 5.83a.573.573 0 0 0 .566.66h3.173a.613.613 0 0 0 .606-.52l.025-.127.48-3.045.031-.166a.613.613 0 0 1 .606-.52h.38c2.47 0 4.403-1.003 4.968-3.903.236-1.212.114-2.223-.511-2.934a2.447 2.447 0 0 0-.7-.535c.143.615.209 1.25.197 1.886v.052h.462z" />
-                                    </svg>
-                                    <span>الدفع عبر PayPal</span>
-                                </>
-                            )}
-                        </button>
+                        <div className="w-full">
+                            <PayPalPayment
+                                amount={plan?.priceValue || 0}
+                                currency="USD"
+                                onSuccess={async (orderData) => {
+                                    console.log('Payment Success:', orderData);
+                                    // Call handlePayment to finalize order in DB
+                                    // We pass the orderData to handlePayment if needed, or just trigger the logic
+                                    await handlePayment(orderData);
+                                }}
+                                onError={(err) => {
+                                    console.error('Payment Failed:', err);
+                                    setIsProcessing(false);
+                                }}
+                            />
+                        </div>
 
                         <button
                             onClick={handleBack}
@@ -434,7 +427,20 @@ function CheckoutContent() {
 export default function CheckoutPage() {
     return (
         <Suspense fallback={<div className="min-h-screen bg-[var(--color-bg-primary)] flex items-center justify-center text-white">جاري التحميل...</div>}>
-            <CheckoutContent />
+            <PayPalWrapper />
         </Suspense>
+    );
+}
+
+function PayPalWrapper() {
+    const { PayPalScriptProvider } = require('@paypal/react-paypal-js');
+    return (
+        <PayPalScriptProvider options={{
+            "clientId": process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "",
+            currency: "USD",
+            intent: "capture"
+        }}>
+            <CheckoutContent />
+        </PayPalScriptProvider>
     );
 }

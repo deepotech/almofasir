@@ -529,7 +529,7 @@ select:disabled {
 }
 
 .hero-title {
-  font-size: var(--text-6xl);
+  font-size: clamp(2.5rem, 5vw, var(--text-6xl));
   margin-bottom: var(--spacing-lg);
   animation: fadeInUp 0.8s ease;
 }

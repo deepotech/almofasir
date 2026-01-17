@@ -407,7 +407,7 @@ function HomeContent() {
                 <>
                   <span className="text-gradient">اكتب حلمك ليتم تفسيره</span>
                   <br />
-                  <span className="text-[var(--color-text-primary)] text-3xl md:text-4xl mt-2 block">
+                  <span className="text-[var(--color-text-primary)] text-2xl md:text-5xl mt-1 block font-normal leading-tight">
                     من قِبل المفسّر الذي اخترته
                   </span>
                 </>
@@ -449,7 +449,7 @@ function HomeContent() {
 
 
             {/* Trust Indicators */}
-            <div className="flex justify-center gap-12 py-12 animate-fadeIn mb-24" style={{ animationDelay: '0.2s' }} suppressHydrationWarning>
+            <div className="flex flex-wrap justify-center gap-4 md:gap-12 py-8 md:py-12 animate-fadeIn mb-16 md:mb-24" style={{ animationDelay: '0.2s' }} suppressHydrationWarning>
               <div className="text-center" suppressHydrationWarning>
                 <div className="text-2xl font-bold text-[var(--color-gold)]" suppressHydrationWarning>
                   <LiveCounter start={15000} add={globalStats?.dreamsCount || 0} />

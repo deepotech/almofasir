@@ -10,7 +10,7 @@ export default function PricingPage() {
         <div className="min-h-screen bg-[var(--color-bg-primary)] text-white font-sans overflow-x-hidden">
             <Header />
 
-            <main className="flex flex-col justify-center min-h-screen pt-40 pb-20 items-center">
+            <main className="flex flex-col justify-center min-h-screen pt-24 md:pt-40 pb-20 items-center">
                 {/* Header Section */}
                 <div className="relative z-20 text-center px-4 mb-48 max-w-2xl mx-auto">
                     <h1 className="text-4xl md:text-5xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white to-purple-200">

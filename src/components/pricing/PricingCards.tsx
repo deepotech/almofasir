@@ -31,7 +31,7 @@ export default function PricingCards() {
                 <div className="text-2xl font-bold text-white mb-4">
                     ${PLANS['ai-single'].price}
                 </div>
-                <p className="text-gray-400 text-sm mb-6 min-h-[40px]">
+                <p className="text-gray-400 text-sm mb-6 min-h-0 md:min-h-[40px]">
                     خيار مرن لمن يحتاج تفسيرات إضافية من وقت لآخر
                 </p>
                 <div className="space-y-3 mb-8 flex-1">
@@ -65,7 +65,7 @@ export default function PricingCards() {
                     ${PLANS['ai-monthly'].price}
                     <span className="text-sm font-normal text-gray-400">/شهر</span>
                 </div>
-                <p className="text-gray-300 text-sm mb-6 min-h-[40px]">
+                <p className="text-gray-300 text-sm mb-6 min-h-0 md:min-h-[40px]">
                     للمهتمين بتفسير أحلامهم بشكل دوري ومنظم
                 </p>
                 <div className="space-y-3 mb-8 flex-1">
@@ -93,7 +93,7 @@ export default function PricingCards() {
                 <div className="text-2xl font-bold text-white mb-4">
                     <span className="text-sm font-normal text-gray-400">يبدأ من</span> ${PLANS['human-single'].priceFrom}
                 </div>
-                <p className="text-gray-400 text-sm mb-6 min-h-[40px]">
+                <p className="text-gray-400 text-sm mb-6 min-h-0 md:min-h-[40px]">
                     استشارة شخصية من مفسر حقيقي يقرأ تفاصيلك
                 </p>
                 <div className="space-y-3 mb-8 flex-1">
