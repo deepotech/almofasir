@@ -5,7 +5,7 @@ import DreamRequest from '@/models/DreamRequest';
 import dbConnect from '@/lib/mongodb';
 // import Dream from '@/models/Dream'; // Legacy model removed
 
-const BASE_URL = 'https://almofasser.com';
+const BASE_URL = 'https://almofasir.com';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const currentDate = new Date().toISOString();
