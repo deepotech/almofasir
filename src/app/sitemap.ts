@@ -1,8 +1,9 @@
 import { MetadataRoute } from 'next';
 import { dreamSymbols } from '@/data/symbols';
 import { interpreters } from '@/lib/interpreters';
+import DreamRequest from '@/models/DreamRequest';
 import dbConnect from '@/lib/mongodb';
-import Dream from '@/models/Dream';
+// import Dream from '@/models/Dream'; // Legacy model removed
 
 const BASE_URL = 'https://almofasser.com';
 
@@ -122,26 +123,28 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         await dbConnect();
         // Fetch last 5000 public dreams
         // Select only necessary fields to reduce payload
-        const dreams = await Dream.find({
+        // We use 'status: completed' or 'isPublic: true' depending on your schema.
+        // Assuming public dreams are those with `isPublic: true` and `seoSlug`.
+        const dreams = await DreamRequest.find({
             isPublic: true,
-            'publicVersion.publishedAt': { $exists: true }
+            status: 'completed',
+            seoSlug: { $exists: true, $ne: null }
         })
-            .select('seoSlug _id updatedAt createdAt')
+            .select('seoSlug updatedAt createdAt')
             .sort({ createdAt: -1 })
             .limit(5000)
             .lean();
 
-        dreamPages = dreams.map((dream) => {
-            // Prefer seoSlug, fallback to _id
-            const slug = dream.seoSlug || dream._id;
+        dreamPages = dreams.map((dream: any) => {
+            const slug = dream.seoSlug;
             // Ensure date string
             const lastMod = dream.updatedAt ? new Date(dream.updatedAt).toISOString() : currentDate;
 
             return {
-                url: `${BASE_URL}/${slug}`, // Root level access as per new structure
+                url: `${BASE_URL}/interpreted-dreams/${slug}`, // Correct path
                 lastModified: lastMod,
                 changeFrequency: 'weekly' as const,
-                priority: 0.6,
+                priority: 0.7,
             };
         });
 
