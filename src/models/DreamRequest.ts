@@ -169,7 +169,7 @@ DreamRequestSchema.index({ userId: 1, dreamHash: 1 }, { unique: true });
 
 // CRITICAL: Unique index on idempotencyKey for same user + same dream + same interpreter
 // This is THE definitive protection against duplicates
-DreamRequestSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
+// (Index defined in schema definition)
 
 
 const DreamRequest: Model<IDreamRequest> =
