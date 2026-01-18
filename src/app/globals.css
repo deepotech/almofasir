@@ -1152,3 +1152,267 @@ select:disabled {
   background: var(--color-bg-secondary);
   color: var(--color-text-primary);
 }
+
+/* ============================================
+   Mobile Optimization (< 768px)
+   ============================================ */
+@media (max-width: 768px) {
+
+  /* Root adjustments */
+  html {
+    font-size: 15px;
+  }
+
+  /* Typography - Mobile */
+  h1 {
+    font-size: 1.75rem !important;
+    /* 28px */
+    line-height: 1.4;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    /* 24px */
+  }
+
+  h3 {
+    font-size: 1.25rem;
+    /* 20px */
+  }
+
+  h4 {
+    font-size: 1.125rem;
+    /* 18px */
+  }
+
+  /* Hero Section - Mobile */
+  .hero {
+    min-height: auto;
+    padding-top: 80px;
+    padding-bottom: 2rem;
+  }
+
+  .hero-content {
+    padding: 0 1rem;
+  }
+
+  .hero-title {
+    font-size: 1.75rem !important;
+    margin-bottom: 1rem;
+  }
+
+  .hero-subtitle {
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  /* Dream Input Section - Mobile */
+  .dream-input-section {
+    padding: 1.25rem;
+    margin-top: 1.5rem;
+    border-radius: 1rem;
+  }
+
+  .dream-input-title {
+    font-size: 1.25rem;
+  }
+
+  .textarea-large {
+    min-height: 120px;
+    font-size: 1rem;
+  }
+
+  /* Cards - Mobile */
+  .card,
+  .glass-card {
+    padding: 1rem;
+    border-radius: 0.75rem;
+  }
+
+  .upgrade-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .upgrade-card {
+    padding: 1.25rem;
+  }
+
+  .upgrade-price {
+    font-size: 1.75rem;
+  }
+
+  /* Buttons - Mobile */
+  .btn {
+    padding: 0.875rem 1.25rem;
+    font-size: 0.9375rem;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .btn-lg {
+    padding: 1rem 1.5rem;
+    font-size: 1rem;
+  }
+
+  .btn-sm {
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
+    width: auto;
+  }
+
+  /* Symbol Cards - Mobile */
+  .symbol-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .symbol-card {
+    padding: 0.875rem;
+  }
+
+  .symbol-icon {
+    width: 45px;
+    height: 45px;
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Stats Grid - Mobile */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .stat-card {
+    padding: 1rem;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+  }
+
+  /* Contact Options - Mobile */
+  .contact-options {
+    grid-template-columns: 1fr;
+  }
+
+  .contact-option-card {
+    padding: 1rem;
+  }
+
+  .contact-option-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 1.25rem;
+  }
+
+  /* Context Fields - Mobile */
+  .context-fields {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  /* Hide secondary elements on mobile */
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  /* Spacing adjustments */
+  .container {
+    padding: 0 1rem;
+  }
+
+  .section {
+    padding: 2rem 0;
+  }
+
+  /* Touch-friendly targets */
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+  }
+}
+
+/* ============================================
+   Sticky CTA - Mobile
+   ============================================ */
+@media (max-width: 768px) {
+  .sticky-cta-mobile {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    padding: 0.875rem 1rem;
+    background: rgba(10, 10, 26, 0.98);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--color-border);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .sticky-cta-mobile .btn {
+    width: 100%;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  /* Add padding to body to account for sticky CTA */
+  body.has-sticky-cta {
+    padding-bottom: 80px;
+  }
+}
+
+/* ============================================
+   Small Mobile (< 375px)
+   ============================================ */
+@media (max-width: 375px) {
+  html {
+    font-size: 14px;
+  }
+
+  h1 {
+    font-size: 1.5rem !important;
+  }
+
+  .hero-title {
+    font-size: 1.5rem !important;
+  }
+
+  .btn-lg {
+    padding: 0.875rem 1.25rem;
+    font-size: 0.9375rem;
+  }
+
+  .symbol-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================
+   Reduce Motion for Accessibility
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

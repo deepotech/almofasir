@@ -74,14 +74,14 @@ export default function InterpretedDreamsPage() {
             <main className="min-h-screen pb-16" style={{ paddingTop: 120 }}>
                 <div className="container px-4">
                     {/* Hero Section */}
-                    <div className="text-center mb-16 relative">
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[var(--color-primary)]/10 blur-[100px] rounded-full -z-10 pointer-events-none"></div>
-                        <h1 className="text-4xl md:text-6xl font-extrabold mb-8 leading-snug">
+                    <div className="text-center mb-8 sm:mb-12 md:mb-16 relative px-4">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-[var(--color-primary)]/10 blur-[100px] rounded-full -z-10 pointer-events-none"></div>
+                        <h1 className="text-2xl sm:text-4xl md:text-6xl font-extrabold mb-4 sm:mb-6 md:mb-8 leading-snug">
                             <span className="text-gradient">أحلام حقيقية وتفسيرها</span>
                             <br />
-                            <span className="text-2xl md:text-4xl text-white mt-4 block font-bold">تفسيرات حقيقية لأحلام الزوار</span>
+                            <span className="text-lg sm:text-2xl md:text-4xl text-white mt-2 sm:mt-4 block font-bold">تفسيرات حقيقية لأحلام الزوار</span>
                         </h1>
-                        <p className="text-[var(--color-text-secondary)] max-w-2xl mx-auto text-lg md:text-xl mb-10 leading-loose opacity-90">
+                        <p className="text-[var(--color-text-secondary)] max-w-2xl mx-auto text-sm sm:text-lg md:text-xl mb-6 sm:mb-8 md:mb-10 leading-relaxed sm:leading-loose opacity-90">
                             مجموعة من الأحلام الواقعية التي فُسرت باستخدام الذكاء الاصطناعي، مع مراجعة رمزية دقيقة، وحماية كاملة لخصوصية أصحابها.
                         </p>
                         <Link href="/" className="btn btn-primary btn-lg shadow-lg hover:shadow-primary/20 transition-all">

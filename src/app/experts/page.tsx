@@ -227,97 +227,97 @@ export default function ExpertsPage() {
                                 return (
                                     <div
                                         key={interpreter.id}
-                                        className={`group relative bg-[var(--color-bg-card)] border rounded-3xl overflow-hidden hover:shadow-[0_20px_40px_-15px_rgba(var(--color-primary-rgb),0.3)] transition-all duration-300 flex flex-col hover:-translate-y-2 ${isRecommended ? 'border-[var(--color-secondary)] shadow-[0_0_30px_-5px_rgba(245,158,11,0.15)] ring-1 ring-[var(--color-secondary)]/30' : 'border-white/10 hover:border-[var(--color-primary)]/50'}`}
+                                        className={`group relative bg-[var(--color-bg-card)] border rounded-2xl sm:rounded-3xl overflow-hidden hover:shadow-[0_20px_40px_-15px_rgba(var(--color-primary-rgb),0.3)] transition-all duration-300 flex flex-col hover:-translate-y-2 ${isRecommended ? 'border-[var(--color-secondary)] shadow-[0_0_30px_-5px_rgba(245,158,11,0.15)] ring-1 ring-[var(--color-secondary)]/30' : 'border-white/10 hover:border-[var(--color-primary)]/50'}`}
                                     >
                                         {/* Highlight Effect for All Cards */}
                                         <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
                                         {/* Badges Container */}
-                                        <div className="absolute top-4 left-4 z-20 flex gap-2">
+                                        <div className="absolute top-3 sm:top-4 left-3 sm:left-4 z-20 flex gap-1 sm:gap-2">
                                             {isRecommended && (
-                                                <div className="bg-gradient-to-r from-[var(--color-secondary)] to-yellow-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-1">
+                                                <div className="bg-gradient-to-r from-[var(--color-secondary)] to-yellow-600 text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shadow-lg flex items-center gap-1">
                                                     <span>⭐</span> الأفضل
                                                 </div>
                                             )}
                                             {isTopRated && !isRecommended && (
-                                                <div className="bg-purple-500/20 backdrop-blur-md border border-purple-500/30 text-purple-200 text-[10px] font-bold px-3 py-1 rounded-full shadow-lg">
+                                                <div className="hidden sm:block bg-purple-500/20 backdrop-blur-md border border-purple-500/30 text-purple-200 text-[10px] font-bold px-3 py-1 rounded-full shadow-lg">
                                                     💎 أعلى تقييم
                                                 </div>
                                             )}
                                             {isSwiftReply && (
-                                                <div className="bg-green-500/20 backdrop-blur-md border border-green-500/30 text-green-200 text-[10px] font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-1">
-                                                    <span>⚡</span> رد سريع
+                                                <div className="bg-green-500/20 backdrop-blur-md border border-green-500/30 text-green-200 text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shadow-lg flex items-center gap-1">
+                                                    <span>⚡</span> <span className="hidden sm:inline">رد سريع</span>
                                                 </div>
                                             )}
                                         </div>
 
                                         {/* Card Header */}
-                                        <div className="p-8 pb-4 flex items-center gap-6 relative z-10">
+                                        <div className="p-4 sm:p-6 md:p-8 pb-2 sm:pb-4 flex items-center gap-3 sm:gap-4 md:gap-6 relative z-10">
                                             {/* Avatar with Status Dot */}
-                                            <div className="relative">
-                                                <div className="w-20 h-20 rounded-2xl bg-[var(--color-bg-tertiary)] border-2 border-white/10 group-hover:border-[var(--color-primary)]/50 transition-colors flex items-center justify-center text-4xl overflow-hidden shadow-2xl">
+                                            <div className="relative flex-shrink-0">
+                                                <div className="w-14 h-14 sm:w-16 md:w-20 sm:h-16 md:h-20 rounded-xl sm:rounded-2xl bg-[var(--color-bg-tertiary)] border-2 border-white/10 group-hover:border-[var(--color-primary)]/50 transition-colors flex items-center justify-center text-2xl sm:text-3xl md:text-4xl overflow-hidden shadow-2xl">
                                                     {interpreter.avatar.startsWith('/') || interpreter.avatar.startsWith('http') || interpreter.avatar.startsWith('data:') ? (
                                                         <img src={interpreter.avatar} alt={interpreter.name} className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500" />
                                                     ) : (
                                                         <span className="transform group-hover:scale-110 transition-transform duration-300">{interpreter.avatar}</span>
                                                     )}
                                                 </div>
-                                                <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-4 border-[var(--color-bg-card)] ${interpreter.status === 'busy' ? 'bg-red-500' : 'bg-green-500'}`} title={interpreter.status === 'busy' ? 'مشغول' : 'متاح'} />
+                                                <div className={`absolute -bottom-1 -right-1 w-4 sm:w-5 h-4 sm:h-5 rounded-full border-2 sm:border-4 border-[var(--color-bg-card)] ${interpreter.status === 'busy' ? 'bg-red-500' : 'bg-green-500'}`} title={interpreter.status === 'busy' ? 'مشغول' : 'متاح'} />
                                             </div>
 
                                             {/* Name & Title */}
-                                            <div>
-                                                <h3 className="font-bold text-xl text-white group-hover:text-[var(--color-primary-light)] transition-colors flex items-center gap-2 mb-1">
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="font-bold text-base sm:text-lg md:text-xl text-white group-hover:text-[var(--color-primary-light)] transition-colors flex items-center gap-1 sm:gap-2 mb-0.5 sm:mb-1 truncate">
                                                     {interpreter.name}
-                                                    {interpreter.isVerified && <span className="text-blue-400 text-sm bg-blue-500/10 p-1 rounded-full" title="موثق">✓</span>}
+                                                    {interpreter.isVerified && <span className="text-blue-400 text-xs sm:text-sm bg-blue-500/10 p-0.5 sm:p-1 rounded-full" title="موثق">✓</span>}
                                                 </h3>
-                                                <p className="text-sm text-gray-400 font-medium">{interpreter.title}</p>
+                                                <p className="text-xs sm:text-sm text-gray-400 font-medium truncate">{interpreter.title}</p>
 
-                                                <div className="flex items-center gap-1 mt-2 text-yellow-400 text-sm font-bold bg-yellow-400/10 px-2 py-0.5 rounded-lg w-fit">
+                                                <div className="flex items-center gap-1 mt-1.5 sm:mt-2 text-yellow-400 text-xs sm:text-sm font-bold bg-yellow-400/10 px-1.5 sm:px-2 py-0.5 rounded-lg w-fit">
                                                     <span>★</span> {interpreter.rating}
-                                                    <span className="text-gray-500 font-normal text-xs ml-1">({interpreter.reviewsCount})</span>
+                                                    <span className="text-gray-500 font-normal text-[10px] sm:text-xs ml-1">({interpreter.reviewsCount})</span>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Bio */}
-                                        <div className="px-8 py-2 flex-grow relative z-10">
+                                        {/* Bio - Hidden on mobile for cleaner look */}
+                                        <div className="hidden sm:block px-6 md:px-8 py-2 flex-grow relative z-10">
                                             <p className="text-sm text-gray-300 leading-relaxed line-clamp-2 h-[3em]">
                                                 {interpreter.bio}
                                             </p>
                                         </div>
 
-                                        {/* Info Grid (Stats) */}
-                                        <div className="px-8 py-5 grid grid-cols-2 gap-4 text-center border-t border-white/5 mt-6 bg-black/20">
+                                        {/* Info Grid (Stats) - Hidden on mobile */}
+                                        <div className="hidden sm:grid px-6 md:px-8 py-4 md:py-5 grid-cols-2 gap-4 text-center border-t border-white/5 mt-4 md:mt-6 bg-black/20">
                                             <div>
-                                                <div className="text-white font-bold text-lg mb-1">{interpreter.completedDreams}+</div>
-                                                <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">حلم مفسر</div>
+                                                <div className="text-white font-bold text-base md:text-lg mb-1">{interpreter.completedDreams}+</div>
+                                                <div className="text-[10px] md:text-xs text-gray-500 font-medium uppercase tracking-wide">حلم مفسر</div>
                                             </div>
                                             <div className="border-r border-white/5">
-                                                <div className="text-[var(--color-primary-light)] font-bold text-lg mb-1">
+                                                <div className="text-[var(--color-primary-light)] font-bold text-base md:text-lg mb-1">
                                                     {interpreter.responseSpeed === '6h' ? '6 ساعات' : interpreter.responseSpeed === '24h' ? '24 ساعة' : '48 ساعة'}
                                                 </div>
-                                                <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">سرعة الرد</div>
+                                                <div className="text-[10px] md:text-xs text-gray-500 font-medium uppercase tracking-wide">سرعة الرد</div>
                                             </div>
                                         </div>
 
                                         {/* Footer: Price & CTA */}
-                                        <div className="p-6 bg-black/40 border-t border-white/5 flex flex-col gap-4 relative z-10 backdrop-blur-sm">
-                                            <div className="flex items-center justify-between">
+                                        <div className="p-3 sm:p-4 md:p-6 bg-black/40 border-t border-white/5 flex flex-col gap-2 sm:gap-4 relative z-10 backdrop-blur-sm mt-auto">
+                                            <div className="flex items-center justify-between gap-2">
                                                 <div className="flex flex-col">
-                                                    <span className="text-xs text-gray-400 mb-1">سعر الاستشارة</span>
-                                                    <span className="text-2xl font-black text-white">
-                                                        {interpreter.price} <span className="text-xs font-medium text-gray-500">{interpreter.currency}</span>
+                                                    <span className="text-[10px] sm:text-xs text-gray-400 mb-0.5 sm:mb-1">السعر</span>
+                                                    <span className="text-lg sm:text-xl md:text-2xl font-black text-white">
+                                                        {interpreter.price} <span className="text-[10px] sm:text-xs font-medium text-gray-500">{interpreter.currency}</span>
                                                     </span>
                                                 </div>
 
                                                 <button
                                                     onClick={() => handleSelectInterpreter(interpreter.id)}
                                                     disabled={interpreter.status === 'offline'}
-                                                    className={`btn px-8 py-3 rounded-xl font-bold transition-all transform hover:scale-105 active:scale-95 shadow-lg flex items-center gap-2 ${isRecommended ? 'bg-gradient-to-r from-[var(--color-secondary)] to-yellow-600 border-none text-white hover:shadow-yellow-500/20' : 'btn-primary hover:shadow-[var(--color-primary)]/30'}`}
+                                                    className={`btn px-4 sm:px-6 md:px-8 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold text-sm sm:text-base transition-all transform hover:scale-105 active:scale-95 shadow-lg flex items-center gap-1 sm:gap-2 ${isRecommended ? 'bg-gradient-to-r from-[var(--color-secondary)] to-yellow-600 border-none text-white hover:shadow-yellow-500/20' : 'btn-primary hover:shadow-[var(--color-primary)]/30'}`}
                                                 >
-                                                    {interpreter.status === 'offline' ? 'غير متاح' : 'احجز الآن'}
-                                                    <span className="text-lg">←</span>
+                                                    {interpreter.status === 'offline' ? 'غير متاح' : 'احجز'}
+                                                    <span className="text-base sm:text-lg">←</span>
                                                 </button>
                                             </div>
                                         </div>

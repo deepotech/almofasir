@@ -423,7 +423,7 @@ function HomeContent() {
             </h1>
 
             {!selectedHumanInterpreter && (
-              <div className="flex flex-col sm:flex-row gap-4 justify-center mt-12 mb-16 animate-fadeInUp" style={{ animationDelay: '0.3s' }} suppressHydrationWarning>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8 sm:mt-12 mb-8 sm:mb-16 animate-fadeInUp" style={{ animationDelay: '0.3s' }} suppressHydrationWarning>
                 <button
                   onClick={() => document.getElementById('dream-input-section')?.scrollIntoView({ behavior: 'smooth' })}
                   className="btn btn-primary btn-lg shadow-glow hover:shadow-lg transition-all transform hover:-translate-y-1 min-w-[200px]"
@@ -432,7 +432,7 @@ function HomeContent() {
                 </button>
                 <button
                   onClick={() => document.getElementById('experts-section')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="btn btn-ghost text-sm text-[var(--color-text-muted)] hover:text-white underline-offset-4 hover:underline"
+                  className="hidden sm:block btn btn-ghost text-sm text-[var(--color-text-muted)] hover:text-white underline-offset-4 hover:underline"
                 >
                   أو تصفح المفسرين
                 </button>
@@ -449,22 +449,22 @@ function HomeContent() {
 
 
             {/* Trust Indicators */}
-            <div className="flex flex-wrap justify-center gap-4 md:gap-12 py-8 md:py-12 animate-fadeIn mb-16 md:mb-24" style={{ animationDelay: '0.2s' }} suppressHydrationWarning>
-              <div className="text-center" suppressHydrationWarning>
-                <div className="text-2xl font-bold text-[var(--color-gold)]" suppressHydrationWarning>
+            <div className="flex flex-wrap justify-center gap-4 sm:gap-8 md:gap-12 py-6 sm:py-8 md:py-12 animate-fadeIn mb-8 sm:mb-16 md:mb-24" style={{ animationDelay: '0.2s' }} suppressHydrationWarning>
+              <div className="text-center min-w-[80px]" suppressHydrationWarning>
+                <div className="text-xl sm:text-2xl font-bold text-[var(--color-gold)]" suppressHydrationWarning>
                   <LiveCounter start={15000} add={globalStats?.dreamsCount || 0} />
                 </div>
-                <div className="text-xs text-[var(--color-text-muted)] mt-1" suppressHydrationWarning>حلم وجد تفسيره معنا</div>
+                <div className="text-[10px] sm:text-xs text-[var(--color-text-muted)] mt-1" suppressHydrationWarning>حلم مفسّر</div>
               </div>
-              <div className="text-center" suppressHydrationWarning>
-                <div className="text-2xl font-bold text-[var(--color-primary-light)]" suppressHydrationWarning>
+              <div className="text-center min-w-[80px]" suppressHydrationWarning>
+                <div className="text-xl sm:text-2xl font-bold text-[var(--color-primary-light)]" suppressHydrationWarning>
                   <LiveCounter start={5000} add={globalStats?.usersCount || 0} />
                 </div>
-                <div className="text-xs text-[var(--color-text-muted)] mt-1" suppressHydrationWarning>شخص يثقون بنا</div>
+                <div className="text-[10px] sm:text-xs text-[var(--color-text-muted)] mt-1" suppressHydrationWarning>مستخدم</div>
               </div>
-              <div className="text-center" suppressHydrationWarning>
-                <div className="text-2xl font-bold text-yellow-400" suppressHydrationWarning>4.9/5</div>
-                <div className="text-xs text-[var(--color-text-muted)]" suppressHydrationWarning>تقييم المتجر</div>
+              <div className="text-center min-w-[80px]" suppressHydrationWarning>
+                <div className="text-xl sm:text-2xl font-bold text-yellow-400" suppressHydrationWarning>4.9/5</div>
+                <div className="text-[10px] sm:text-xs text-[var(--color-text-muted)]" suppressHydrationWarning>تقييم</div>
               </div>
             </div>
 
