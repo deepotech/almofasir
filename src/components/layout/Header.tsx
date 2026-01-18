@@ -5,15 +5,16 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { usePathname } from 'next/navigation';
 
+// TODO: Customize your navigation links here
 const navLinks = [
     { href: '/', label: 'الرئيسية' },
-    { href: '/pricing', label: 'الأسعار', highlight: 'primary' },
-    { href: '/interpreted-dreams', label: 'أحلام حقيقية' },
-    { href: '/symbols', label: 'قاموس الرموز' },
+    { href: '/pricing', label: 'الأسعار', className: 'text-[var(--color-primary)] font-bold' },
+    { href: '/interpreted-dreams', label: 'أحلام حقيقية وتفسيرها' },
+    { href: '/symbols', label: 'قاموس تفسير الأحلام' },
     { href: '/journal', label: 'سجل أحلامي' },
     { href: '/learn', label: 'تعلّم' },
     { href: '/experts', label: 'المفسرون' },
-    { href: '/join', label: 'انضم كمفسّر', highlight: 'amber' },
+    { href: '/join', label: 'انضم كمفسّر', className: 'text-amber-500 font-bold' },
 ];
 
 export default function Header() {
@@ -21,7 +22,6 @@ export default function Header() {
     const { user, logout } = useAuth();
     const pathname = usePathname();
     const menuRef = useRef<HTMLDivElement>(null);
-    const buttonRef = useRef<HTMLButtonElement>(null);
 
     // Close menu on route change
     useEffect(() => {
@@ -45,23 +45,10 @@ export default function Header() {
         const handleEscape = (e: KeyboardEvent) => {
             if (e.key === 'Escape' && isMobileMenuOpen) {
                 setIsMobileMenuOpen(false);
-                buttonRef.current?.focus();
             }
         };
         document.addEventListener('keydown', handleEscape);
         return () => document.removeEventListener('keydown', handleEscape);
-    }, [isMobileMenuOpen]);
-
-    // Simple focus trap
-    useEffect(() => {
-        if (isMobileMenuOpen && menuRef.current) {
-            const focusableElements = menuRef.current.querySelectorAll(
-                'a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
-            );
-            if (focusableElements.length > 0) {
-                (focusableElements[0] as HTMLElement).focus();
-            }
-        }
     }, [isMobileMenuOpen]);
 
     const closeMobileMenu = () => setIsMobileMenuOpen(false);
@@ -70,32 +57,32 @@ export default function Header() {
         <>
             <header className="header">
                 <div className="container header-inner" suppressHydrationWarning>
-                    {/* Logo */}
+                    {/* Logo - Always visible */}
                     <Link href="/" className="logo">
                         <div className="logo-icon" suppressHydrationWarning>🌙</div>
                         <span>المُفسِّر</span>
                     </Link>
 
-                    {/* Desktop Navigation */}
-                    <nav className="hidden md:flex items-center gap-6">
-                        {navLinks.map((link) => (
-                            <Link
-                                key={link.href}
-                                href={link.href}
-                                className={`nav-link ${pathname === link.href ? 'active' : ''} ${link.highlight === 'primary' ? 'text-[var(--color-primary)] font-bold' :
-                                        link.highlight === 'amber' ? 'text-amber-500 font-bold' : ''
-                                    }`}
-                            >
-                                {link.label}
-                            </Link>
-                        ))}
+                    {/* ========================================
+                        DESKTOP ONLY: Original nav (unchanged)
+                        Hidden on mobile, shown on md+
+                    ======================================== */}
+                    <nav className="nav" style={{ display: 'none' }} id="desktop-nav">
+                        <Link href="/" className="nav-link active">الرئيسية</Link>
+                        <Link href="/pricing" className="nav-link text-[var(--color-primary)] font-bold">الأسعار</Link>
+                        <Link href="/interpreted-dreams" className="nav-link">أحلام حقيقية وتفسيرها</Link>
+                        <Link href="/symbols" className="nav-link">قاموس تفسير الأحلام</Link>
+                        <Link href="/journal" className="nav-link">سجل أحلامي</Link>
+                        <Link href="/learn" className="nav-link">تعلّم</Link>
+                        <Link href="/experts" className="nav-link">المفسرون</Link>
+                        <Link href="/join" className="nav-link text-amber-500 font-bold">انضم كمفسّر</Link>
                     </nav>
 
-                    {/* Desktop Auth Buttons */}
-                    <div className="hidden md:flex gap-md items-center" suppressHydrationWarning>
+                    {/* DESKTOP ONLY: Auth section */}
+                    <div className="flex gap-md items-center" style={{ display: 'none' }} id="desktop-auth" suppressHydrationWarning>
                         {user ? (
                             <div className="flex items-center gap-md">
-                                <span className="text-sm text-[var(--color-text-muted)]">
+                                <span className="text-sm text-[var(--color-text-muted)] hidden md:block">
                                     مرحباً، {user.displayName || 'زائر'}
                                 </span>
                                 {user.photoURL ? (
@@ -133,39 +120,46 @@ export default function Header() {
                         )}
                     </div>
 
-                    {/* Mobile Menu Button (Hamburger) */}
+                    {/* ========================================
+                        MOBILE ONLY: Hamburger button
+                        Shown on mobile, hidden on md+
+                    ======================================== */}
                     <button
-                        ref={buttonRef}
-                        className="md:hidden flex flex-col justify-center items-center w-10 h-10 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                        className="mobile-menu-btn"
                         onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                         aria-label={isMobileMenuOpen ? 'إغلاق القائمة' : 'فتح القائمة'}
                         aria-expanded={isMobileMenuOpen}
-                        aria-controls="mobile-menu"
                     >
-                        <span className={`block w-5 h-0.5 bg-white transition-all duration-300 ${isMobileMenuOpen ? 'rotate-45 translate-y-1' : ''}`} />
-                        <span className={`block w-5 h-0.5 bg-white mt-1 transition-all duration-300 ${isMobileMenuOpen ? 'opacity-0' : ''}`} />
-                        <span className={`block w-5 h-0.5 bg-white mt-1 transition-all duration-300 ${isMobileMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
+                        <span className={`block w-5 h-0.5 bg-white transition-all duration-300 ${isMobileMenuOpen ? 'rotate-45 translate-y-1.5' : ''}`} />
+                        <span className={`block w-5 h-0.5 bg-white mt-1.5 transition-all duration-300 ${isMobileMenuOpen ? 'opacity-0' : ''}`} />
+                        <span className={`block w-5 h-0.5 bg-white mt-1.5 transition-all duration-300 ${isMobileMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
                     </button>
                 </div>
             </header>
 
-            {/* Mobile Menu Overlay */}
-            <div
-                className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] md:hidden transition-opacity duration-300 ${isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-                    }`}
-                onClick={closeMobileMenu}
-                aria-hidden="true"
-            />
+            {/* ========================================
+                MOBILE ONLY: Overlay
+            ======================================== */}
+            {isMobileMenuOpen && (
+                <div
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[998]"
+                    onClick={closeMobileMenu}
+                    aria-hidden="true"
+                    style={{ display: 'block' }}
+                />
+            )}
 
-            {/* Mobile Menu Drawer (RTL: slides from right) */}
+            {/* ========================================
+                MOBILE ONLY: Drawer (RTL - slides from right)
+            ======================================== */}
             <div
                 ref={menuRef}
-                id="mobile-menu"
+                className={`fixed top-0 right-0 h-full w-[85%] max-w-sm bg-[var(--color-bg-secondary)] border-l border-[var(--color-border)] z-[999] transform transition-transform duration-300 ease-out overflow-y-auto ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
+                    }`}
                 role="dialog"
                 aria-modal="true"
                 aria-label="القائمة الرئيسية"
-                className={`fixed top-0 right-0 h-full w-[280px] max-w-[85vw] bg-[var(--color-bg-secondary)] border-l border-[var(--color-border)] z-[1000] md:hidden transform transition-transform duration-300 ease-out overflow-y-auto ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
-                    }`}
+                id="mobile-drawer"
             >
                 {/* Drawer Header */}
                 <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
@@ -175,7 +169,7 @@ export default function Header() {
                     </Link>
                     <button
                         onClick={closeMobileMenu}
-                        className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-white transition-colors"
+                        className="w-10 h-10 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-white text-xl transition-colors"
                         aria-label="إغلاق القائمة"
                     >
                         ✕
@@ -192,9 +186,7 @@ export default function Header() {
                             className={`block py-3 px-4 rounded-lg text-base font-medium transition-colors ${pathname === link.href
                                     ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary-light)]'
                                     : 'text-[var(--color-text-secondary)] hover:bg-white/5 hover:text-white'
-                                } ${link.highlight === 'primary' ? 'text-[var(--color-primary-light)]' :
-                                    link.highlight === 'amber' ? 'text-amber-400' : ''
-                                }`}
+                                } ${link.className || ''}`}
                         >
                             {link.label}
                         </Link>
@@ -208,7 +200,6 @@ export default function Header() {
                 <div className="p-4">
                     {user ? (
                         <div className="flex flex-col gap-3">
-                            {/* User Info */}
                             <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
                                 {user.photoURL ? (
                                     <img
@@ -231,7 +222,6 @@ export default function Header() {
                                 </div>
                             </div>
 
-                            {/* Admin Link */}
                             {user.email === 'dev23hecoplus93mor@gmail.com' && (
                                 <Link
                                     href="/admin/dashboard"
@@ -279,6 +269,50 @@ export default function Header() {
                     )}
                 </div>
             </div>
+
+            {/* ========================================
+                CSS: Control desktop/mobile visibility
+            ======================================== */}
+            <style jsx global>{`
+                /* DESKTOP: Show nav and auth on md+ */
+                @media (min-width: 768px) {
+                    #desktop-nav,
+                    #desktop-auth {
+                        display: flex !important;
+                    }
+                    .mobile-menu-btn,
+                    #mobile-drawer {
+                        display: none !important;
+                    }
+                }
+
+                /* MOBILE: Show hamburger, hide desktop nav */
+                @media (max-width: 767px) {
+                    #desktop-nav,
+                    #desktop-auth {
+                        display: none !important;
+                    }
+                    .mobile-menu-btn {
+                        display: flex !important;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        width: 44px;
+                        height: 44px;
+                        background: rgba(255, 255, 255, 0.05);
+                        border: none;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        transition: background 0.2s;
+                    }
+                    .mobile-menu-btn:hover {
+                        background: rgba(255, 255, 255, 0.1);
+                    }
+                    #mobile-drawer {
+                        display: block !important;
+                    }
+                }
+            `}</style>
         </>
     );
 }

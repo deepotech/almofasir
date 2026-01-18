@@ -36,12 +36,19 @@ export async function GET() {
 
         const totalRevenue = revenueAggregation[0]?.totalAmount || 0;
 
+        // 4. Dreams Count (All interpreted dreams)
+        const dreamsCount = await Dream.countDocuments({});
+
+        // 5. Users Count
+        const usersCount = await User.countDocuments({ role: 'user' });
+
         return NextResponse.json({
             totalRequests,
             completedRequests,
             totalRevenue,
-            usersCount: await User.countDocuments({ role: 'user' }), // Optional extra
-            interpretersCount: await User.countDocuments({ role: 'interpreter' }) // Optional extra
+            dreamsCount,  // For homepage "حلم مفسّر"
+            usersCount,   // For homepage "مستخدم"
+            interpretersCount: await User.countDocuments({ role: 'interpreter' })
         });
 
     } catch (error) {
