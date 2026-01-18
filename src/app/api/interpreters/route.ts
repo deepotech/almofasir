@@ -14,7 +14,8 @@ export async function GET(req: NextRequest) {
         // Build query
         const query: Record<string, unknown> = {
             status: 'active',
-            isActive: true
+            isActive: true,
+            displayName: { $nin: ['HICHAM EL MORSLI', 'مفسر تجريبي'] }
         };
 
         if (type && ['religious', 'psychological', 'symbolic', 'mixed'].includes(type)) {
