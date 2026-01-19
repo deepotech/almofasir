@@ -75,18 +75,34 @@ export async function POST(req: Request) {
             </div>
         `;
 
+        // ... Email Content construction remains the same ...
+
+        // Send Email with Timeout (Fire and Forget strategy with a small wait window)
+        // We wait max 2.5 seconds for email. If it takes longer, we proceed to return success to user/client
+        // so the UI doesn't hang. The email might still send in background on some platforms,
+        // or fail silently, but the important part is the DB record is saved.
         try {
             console.time('[Performance] Email Send');
-            await transporter.sendMail({
+
+            const sendEmailPromise = transporter.sendMail({
                 from: process.env.EMAIL_USER,
                 to: adminEmail,
                 subject: `طلب انضمام مفسر جديد: ${fullName}`,
                 html: emailContent,
             });
+
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Email send timed out')), 2500)
+            );
+
+            await Promise.race([sendEmailPromise, timeoutPromise]);
+
             console.timeEnd('[Performance] Email Send');
+            console.log('[API] Email sent successfully');
         } catch (emailError) {
-            console.error('Error sending email:', emailError);
-            // Continue even if email fails, as DB is more important
+            console.timeEnd('[Performance] Email Send');
+            console.error('Email sending warning (non-fatal):', emailError);
+            // We consciously ignore this error so the user gets a "Success" response.
         }
 
         return NextResponse.json(
