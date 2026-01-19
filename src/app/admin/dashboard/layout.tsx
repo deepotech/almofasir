@@ -16,7 +16,8 @@ import {
     Menu,
     X,
     Bell,
-    Shield
+    Shield,
+    UserCheck
 } from 'lucide-react';
 
 export default function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
@@ -60,6 +61,7 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
     const menuItems = [
         { icon: LayoutDashboard, label: 'نظرة عامة', href: '/admin/dashboard' },
         { icon: Users, label: 'المفسّرون', href: '/admin/dashboard/interpreters' },
+        { icon: UserCheck, label: 'طلبات الانضمام', href: '/admin/dashboard/requests' }, // New Link
         { icon: MessageSquare, label: 'الطلبات', href: '/admin/dashboard/orders' },
         { icon: Wallet, label: 'الإيرادات', href: '/admin/dashboard/revenue' },
         { icon: Star, label: 'التقييمات', href: '/admin/dashboard/reviews' },
