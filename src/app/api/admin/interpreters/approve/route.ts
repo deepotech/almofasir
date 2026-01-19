@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import InterpreterRequest from '@/models/InterpreterRequest';
 import User from '@/models/User';
+import Interpreter from '@/models/Interpreter'; // Added
 import nodemailer from 'nodemailer';
 
 export async function POST(req: Request) {
@@ -35,6 +36,26 @@ export async function POST(req: Request) {
         if (user) {
             user.role = 'interpreter';
             await user.save();
+
+            // CREATE INTERPRETER PROFILE
+            // This ensures they appear on the /experts page immediately
+            await Interpreter.findOneAndUpdate(
+                { userId: user.firebaseUid },
+                {
+                    userId: user.firebaseUid,
+                    email: user.email,
+                    displayName: request.fullName, // Use name from request
+                    bio: request.bio || 'مفسر أحلام معتمد',
+                    interpretationType: request.interpretationType || 'mixed',
+                    price: 15, // Default starting price
+                    currency: 'USD',
+                    responseTime: 24,
+                    isActive: true, // Immediately visible
+                    status: 'active'
+                },
+                { upsert: true, new: true }
+            );
+
         } else {
             // If user doesn't exist yet, we can't create a full User record without Firebase UID.
             // But the 'InterpreterRequest' approved status is enough for now.
