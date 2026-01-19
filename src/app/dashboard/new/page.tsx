@@ -150,6 +150,23 @@ export default function NewDreamPage() {
                 interpreter: selectedInterpreter || 'ibn-sirin'
             });
 
+            // Auto-Publish if requested
+            if (allowPublishing && data.orderId) {
+                // We don't await this to avoid blocking the UI, but we could show a toast
+                // calling the publish API which we fixed to accept Order IDs
+                fetch(`/api/dreams/${data.orderId}/publish`, {
+                    method: 'POST',
+                    headers: headers // Re-use auth headers
+                }).then(async (res) => {
+                    if (res.ok) {
+                        console.log('Auto-published successfully');
+                        // Optional: Show success toast
+                    } else {
+                        console.warn('Auto-publish failed', await res.text());
+                    }
+                }).catch(err => console.error('Auto-publish error', err));
+            }
+
         } catch (error: any) {
             console.error('Interpretation failed:', error);
 
