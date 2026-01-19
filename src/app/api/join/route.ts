@@ -4,8 +4,11 @@ import InterpreterRequest from '@/models/InterpreterRequest';
 import nodemailer from 'nodemailer';
 
 export async function POST(req: Request) {
+    console.log('[API] Join Request Started'); // Start log
     try {
+        console.time('[Performance] DB Connect');
         await connectDB();
+        console.timeEnd('[Performance] DB Connect');
 
         const body = await req.json();
         const {
@@ -28,6 +31,7 @@ export async function POST(req: Request) {
         }
 
         // Create new request
+        console.time('[Performance] DB Create');
         const newRequest = await InterpreterRequest.create({
             fullName,
             email,
@@ -38,6 +42,8 @@ export async function POST(req: Request) {
             bio,
             sampleInterpretation,
         });
+        console.timeEnd('[Performance] DB Create');
+        console.log(`[API] New Request Created: ${newRequest._id}`);
 
         // Send Email Notification to Admin
         const transporter = nodemailer.createTransport({
@@ -70,12 +76,14 @@ export async function POST(req: Request) {
         `;
 
         try {
+            console.time('[Performance] Email Send');
             await transporter.sendMail({
                 from: process.env.EMAIL_USER,
                 to: adminEmail,
                 subject: `طلب انضمام مفسر جديد: ${fullName}`,
                 html: emailContent,
             });
+            console.timeEnd('[Performance] Email Send');
         } catch (emailError) {
             console.error('Error sending email:', emailError);
             // Continue even if email fails, as DB is more important
