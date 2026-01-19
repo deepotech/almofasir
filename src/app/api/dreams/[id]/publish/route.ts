@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Dream from '@/models/Dream';
+import DreamRequest from '@/models/DreamRequest'; // Added
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 
@@ -42,23 +43,59 @@ export async function POST(
         }
 
         const { id } = await params;
-        // Find dream by ID only first
-        const dream = await Dream.findById(id);
+        // Find dream by ID first (Legacy)
+        let dream = await Dream.findById(id);
+        let fromRequest = false;
+
+        // If not found in Dream collection, look in DreamRequest (New Flow)
+        if (!dream) {
+            const dreamRequest = await DreamRequest.findById(id);
+            if (dreamRequest) {
+                fromRequest = true;
+                // Check auth for DreamRequest
+                if (dreamRequest.userId) {
+                    if (!userId || dreamRequest.userId !== userId) {
+                        return NextResponse.json({ error: 'Unauthorized: You do not own this dream request' }, { status: 401 });
+                    }
+                }
+
+                // Convert to Dream object (InMemory or Save?)
+                // We will create a new Dream document or find one that matches this request
+                // For now, let's CREATE a new one to represent the permanent record.
+
+                // Basic conversion
+                dream = new Dream({
+                    userId: dreamRequest.userId,
+                    content: dreamRequest.dreamText,
+                    mood: dreamRequest.context?.dominantFeeling || 'neutral',
+                    socialStatus: dreamRequest.context?.socialStatus,
+                    gender: dreamRequest.context?.gender,
+                    isRecurring: dreamRequest.context?.isRecurring || false,
+                    interpretation: {
+                        summary: dreamRequest.interpretationText || 'تفسير آلي',
+                        aiGenerated: dreamRequest.type === 'AI',
+                        isPremium: false
+                    },
+                    status: 'completed',
+                    createdAt: dreamRequest.createdAt
+                });
+
+                // Note: We don't save it yet, the publishing logic below does `await dream.save()`
+            }
+        }
 
         if (!dream) {
             return NextResponse.json({ error: 'Dream not found' }, { status: 404 });
         }
 
-        // 2. Authorization Check
-        if (dream.userId) {
+        // 2. Authorization Check (for existing Dreams)
+        if (!fromRequest && dream.userId) {
             // Dream belongs to a user -> MUST have matching userId
             if (!userId || dream.userId !== userId) {
                 return NextResponse.json({ error: 'Unauthorized: You do not own this dream' }, { status: 401 });
             }
-        } else {
+        } else if (!fromRequest) {
             // Dream has no userId -> It's a guest dream -> ALLOW publish by anyone (or current session)
-            // Ideally we'd have a session ID or 'isGuest' check, but for now we interpret 'no userId' as 'publicly claimable/publishable' by the creator in the same session context (practically).
-            // Since we don't have persistent guest sessions, we assume the person holding the ID just created it.
             console.log('[Publish] Guest dream publishing allowed.');
         }
 
