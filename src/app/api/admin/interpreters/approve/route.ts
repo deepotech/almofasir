@@ -31,37 +31,43 @@ export async function POST(req: Request) {
         // If not, they will register later, and our signup logic should check this 'approved' status.
         // For MVP: We assume they might be a user or will be. We'll search by email.
 
+        console.log(`[Approve API] Processing approval for request: ${requestId}, email: ${email}`);
+
         let user = await User.findOne({ email });
 
         if (user) {
+            console.log(`[Approve API] Found user for email ${email}. FirebaseUid: ${user.firebaseUid}`);
+
             user.role = 'interpreter';
             await user.save();
+            console.log(`[Approve API] Updated user role to interpreter.`);
 
             // CREATE INTERPRETER PROFILE
-            // This ensures they appear on the /experts page immediately
-            await Interpreter.findOneAndUpdate(
-                { userId: user.firebaseUid },
-                {
-                    userId: user.firebaseUid,
-                    email: user.email,
-                    displayName: request.fullName, // Use name from request
-                    bio: request.bio || 'مفسر أحلام معتمد',
-                    interpretationType: request.interpretationType || 'mixed',
-                    price: 15, // Default starting price
-                    currency: 'USD',
-                    responseTime: 24,
-                    isActive: true, // Immediately visible
-                    status: 'active'
-                },
-                { upsert: true, new: true }
-            );
+            try {
+                const newInterpreter = await Interpreter.findOneAndUpdate(
+                    { userId: user.firebaseUid },
+                    {
+                        userId: user.firebaseUid,
+                        email: user.email,
+                        displayName: request.fullName,
+                        bio: request.bio || 'مفسر أحلام معتمد',
+                        interpretationType: request.interpretationType || 'mixed',
+                        price: 15,
+                        currency: 'USD',
+                        responseTime: 24,
+                        isActive: true,
+                        status: 'active'
+                    },
+                    { upsert: true, new: true }
+                );
+                console.log(`[Approve API] Successfully created/updated interpreter profile: ${newInterpreter._id}`);
+            } catch (err) {
+                console.error(`[Approve API] Error creating interpreter profile:`, err);
+            }
 
         } else {
-            // If user doesn't exist yet, we can't create a full User record without Firebase UID.
-            // But the 'InterpreterRequest' approved status is enough for now.
-            // When they signup, we should check if they have an approved request. 
-            // (Logic for that would be in the signup flow, but out of scope for this specific button action)
-            // However, often interpreters register as normal users first.
+            console.warn(`[Approve API] User NOT found for email: ${email}. Interpreter profile was NOT created.`);
+            // Note: If user is not found, we cannot link an Interpreter profile to a Firebase UID.
         }
 
         // 3. Send Acceptance Email

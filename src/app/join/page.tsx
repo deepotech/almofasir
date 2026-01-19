@@ -242,6 +242,20 @@ export default function JoinPage() {
                         </div>
 
                         <div className="glass-card p-8 md:p-10 border-t-4 border-t-[var(--color-primary)]">
+                            {/* Important Note Banner */}
+                            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 mb-8 flex items-start gap-3">
+                                <span className="text-2xl">⚠️</span>
+                                <div>
+                                    <h4 className="font-bold text-amber-500 mb-1">ملاحظة هامة جداً</h4>
+                                    <p className="text-sm text-gray-300">
+                                        يجب أن يكون لديك <strong>حساب مسجل في الموقع</strong> بنفس البريد الإلكتروني الذي ستستخدمه في هذا النموذج.
+                                        <br />
+                                        لن يتم إنشاء ملفك كمفسر إذا لم يكن لديك حساب مستخدم مسبقاً.
+                                        <a href="/auth/register" className="text-amber-400 underline hover:text-amber-300 mr-1">سجل حساب جديد من هنا</a>
+                                    </p>
+                                </div>
+                            </div>
+
                             <form onSubmit={handleSubmit} className="space-y-10 text-right" dir="rtl">
 
                                 {/* Section 1: Personal Info */}
