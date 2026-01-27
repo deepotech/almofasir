@@ -26,12 +26,17 @@ export default function ContactPage() {
         e.preventDefault();
         setLoading(true);
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
         try {
             const res = await fetch('/api/contact', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(formData),
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
 
             const data = await res.json();
 
@@ -42,10 +47,16 @@ export default function ContactPage() {
                 type: 'success'
             });
             setFormData({ name: '', email: '', subject: '', message: '' });
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
+            let errorMessage = 'عذراً، حدث خطأ أثناء إرسال الرسالة. يرجى المحاولة لاحقاً.';
+
+            if (error.name === 'AbortError') {
+                errorMessage = 'استغرق الارسال وقتاً طويلاً. يرجى التحقق من اتصالك أو المحاولة لاحقاً.';
+            }
+
             setToast({
-                message: 'عذراً، حدث خطأ أثناء إرسال الرسالة. يرجى المحاولة لاحقاً.',
+                message: errorMessage,
                 type: 'error'
             });
         } finally {
