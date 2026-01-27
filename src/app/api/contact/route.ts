@@ -22,18 +22,13 @@ export async function POST(req: Request) {
             );
         }
 
-        // Configure transporter with explicit SMTP settings and timeout
+        // Configure transporter
         const transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 465, // Use 465 for SMTPS
-            secure: true, // Use SSL
+            service: 'gmail',
             auth: {
                 user: process.env.EMAIL_USER,
                 pass: process.env.EMAIL_PASS
-            },
-            connectionTimeout: 10000, // 10 seconds
-            greetingTimeout: 10000,
-            socketTimeout: 10000,
+            }
         });
 
         // Email content
