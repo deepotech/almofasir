@@ -54,10 +54,10 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ success: true });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error sending email:', error);
         return NextResponse.json(
-            { error: 'Failed to send email' },
+            { error: 'Failed to send email', details: error?.message || String(error) },
             { status: 500 }
         );
     }
