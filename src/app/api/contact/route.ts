@@ -28,7 +28,7 @@ export async function POST(req: Request) {
         const { data, error } = await resend.emails.send({
             from: 'Almofasser Contact <onboarding@resend.dev>', // Use verified domain or testing email
             to: process.env.EMAIL_TO || 'dev23hecoplus93mor@gmail.com', // Fallback to your email
-            reply_to: email,
+            replyTo: email,
             subject: `[Almofasser Contact] ${subject}`,
             html: `
                 <h3>New Contact Message</h3>
