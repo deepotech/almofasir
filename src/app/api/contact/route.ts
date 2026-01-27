@@ -13,19 +13,28 @@ export async function POST(req: Request) {
             );
         }
 
+        // Check for missing credentials
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+            console.error('Missing email credentials');
+            return NextResponse.json(
+                { error: 'Server configuration error' },
+                { status: 500 }
+            );
+        }
+
         // Configure transporter
         const transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
-                user: process.env.EMAIL_USER, // Sender email (e.g. your gmial)
-                pass: process.env.EMAIL_PASS  // App Password
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS
             }
         });
 
         // Email content
         const mailOptions = {
             from: process.env.EMAIL_USER,
-            to: 'dev23hecoplus93mor@gmail.com', // Target email
+            to: process.env.EMAIL_TO || process.env.EMAIL_USER, // Use EMAIL_TO or fallback to sender
             replyTo: email,
             subject: `[Almofasser Contact] ${subject}`,
             html: `
