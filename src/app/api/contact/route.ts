@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 export async function POST(req: Request) {
     try {
@@ -13,29 +13,22 @@ export async function POST(req: Request) {
             );
         }
 
-        // Check for missing credentials
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-            console.error('Missing email credentials');
+        // Check for API Key
+        if (!process.env.RESEND_API_KEY) {
+            console.error('Missing RESEND_API_KEY');
             return NextResponse.json(
                 { error: 'Server configuration error' },
                 { status: 500 }
             );
         }
 
-        // Configure transporter
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS
-            }
-        });
+        const resend = new Resend(process.env.RESEND_API_KEY);
 
         // Email content
-        const mailOptions = {
-            from: process.env.EMAIL_USER,
-            to: process.env.EMAIL_TO || process.env.EMAIL_USER, // Use EMAIL_TO or fallback to sender
-            replyTo: email,
+        const { data, error } = await resend.emails.send({
+            from: 'Almofasser Contact <onboarding@resend.dev>', // Use verified domain or testing email
+            to: process.env.EMAIL_TO || 'dev23hecoplus93mor@gmail.com', // Fallback to your email
+            reply_to: email,
             subject: `[Almofasser Contact] ${subject}`,
             html: `
                 <h3>New Contact Message</h3>
@@ -47,12 +40,17 @@ export async function POST(req: Request) {
                     <p>${message.replace(/\n/g, '<br>')}</p>
                 </div>
             `
-        };
+        });
 
-        // Send email
-        await transporter.sendMail(mailOptions);
+        if (error) {
+            console.error('Resend Error:', error);
+            return NextResponse.json(
+                { error: 'Failed to send email', details: error.message },
+                { status: 500 }
+            );
+        }
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, data });
 
     } catch (error: any) {
         console.error('Error sending email:', error);
