@@ -11,6 +11,7 @@ const navLinks = [
     { href: '/pricing', label: 'الأسعار', className: 'text-[var(--color-primary)] font-bold' },
     { href: '/interpreted-dreams', label: 'أحلام حقيقية وتفسيرها' },
     { href: '/symbols', label: 'قاموس تفسير الأحلام' },
+    { href: '/tafsir-al-ahlam', label: 'دليل تفسير الأحلام', className: 'text-[var(--color-gold)]' },
     { href: '/journal', label: 'سجل أحلامي' },
     { href: '/learn', label: 'تعلّم' },
     { href: '/experts', label: 'المفسرون' },
@@ -72,6 +73,7 @@ export default function Header() {
                         <Link href="/pricing" className="nav-link text-[var(--color-primary)] font-bold">الأسعار</Link>
                         <Link href="/interpreted-dreams" className="nav-link">أحلام حقيقية وتفسيرها</Link>
                         <Link href="/symbols" className="nav-link">قاموس تفسير الأحلام</Link>
+                        <Link href="/tafsir-al-ahlam" className="nav-link text-[var(--color-gold)]">دليل تفسير الأحلام</Link>
                         <Link href="/journal" className="nav-link">سجل أحلامي</Link>
                         <Link href="/learn" className="nav-link">تعلّم</Link>
                         <Link href="/experts" className="nav-link">المفسرون</Link>
@@ -184,8 +186,8 @@ export default function Header() {
                             href={link.href}
                             onClick={closeMobileMenu}
                             className={`block py-3 px-4 rounded-lg text-base font-medium transition-colors ${pathname === link.href
-                                    ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary-light)]'
-                                    : 'text-[var(--color-text-secondary)] hover:bg-white/5 hover:text-white'
+                                ? 'bg-[var(--color-primary)]/20 text-[var(--color-primary-light)]'
+                                : 'text-[var(--color-text-secondary)] hover:bg-white/5 hover:text-white'
                                 } ${link.className || ''}`}
                         >
                             {link.label}

@@ -28,6 +28,8 @@ import ShareDreamModal from '@/components/modals/ShareDreamModal';
 import RegisterPromptModal from '@/components/modals/RegisterPromptModal';
 import Toast, { ToastType } from '@/components/ui/Toast';
 import LiveCounter from '@/components/ui/LiveCounter';
+import FAQSection from '@/components/home/FAQSection';
+import SEOIntro from '@/components/home/SEOIntro';
 
 function HomeContent() {
   const { user } = useAuth();
@@ -828,6 +830,9 @@ function HomeContent() {
           </div>
         </section>
 
+        {/* SEO Intro Section */}
+        <SEOIntro />
+
         {/* Re-ordered Experts Section (Moved Up) */}
         <section id="experts-section" className="section mb-32">
           <div className="container" suppressHydrationWarning>
@@ -1120,6 +1125,9 @@ function HomeContent() {
             </div>
           </div>
         </section>
+
+        {/* FAQ Section */}
+        <FAQSection />
 
         {/* Final CTA Action */}
         <section className="section py-24 relative overflow-hidden">

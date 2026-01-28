@@ -98,6 +98,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             changeFrequency: 'weekly',
             priority: 0.8,
         },
+        // Authority Pillar Page
+        {
+            url: `${BASE_URL}/tafsir-al-ahlam`,
+            lastModified: currentDate,
+            changeFrequency: 'weekly',
+            priority: 0.9,
+        },
     ];
 
     // Dynamic symbol pages

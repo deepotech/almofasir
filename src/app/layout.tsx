@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   title: "المفسر | أكبر موقع عربي لتفسير الأحلام والرؤى",
   description: "تفسير أحلام فوري ومجاني بالذكاء الاصطناعي وفق منهج ابن سيرين والنابلسي. قاموس رموز شامل وتفسير الرؤى بالقرآن، مع نخبة من المفسرين المعتمدين.",
   keywords: "تفسير الأحلام مجانا, تفسير الأحلام بالذكاء الاصطناعي, تفسير الاحلام لابن سيرين, تفسير حلم, قاموس تفسير الأحلام بالحروف, موقع تفسير الأحلام, تفسير الأحلام مجانا اكتب حلمك, تفسير الرؤى, النابلسي, تفسير الأحلام بالقران والسنة, تعبير الرؤيا",
-  authors: [{ name: "المُفسِّر", url: "https://almofasser.com" }],
+  authors: [{ name: "المُفسِّر", url: "https://almofasir.com" }],
   creator: "المُفسِّر",
   publisher: "المُفسِّر",
   robots: {
@@ -34,18 +34,19 @@ export const metadata: Metadata = {
     locale: "ar_SA",
     type: "website",
     siteName: "المُفسِّر",
-    url: "https://almofasser.com",
+    url: "https://almofasir.com",
+    images: [{ url: "https://almofasir.com/og-image.jpg", width: 1200, height: 630, alt: "المفسر - تفسير الأحلام" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "تفسير الأحلام مجاناً | المفسر",
     description: "اكتب حلمك واحصل على تفسير فوري بالذكاء الاصطناعي وفق ابن سيرين والنابلسي",
-    creator: "@almofasser",
+    creator: "@almofasir",
   },
   alternates: {
-    canonical: "https://almofasser.com",
+    canonical: "https://almofasir.com",
     languages: {
-      'ar': 'https://almofasser.com',
+      'ar': 'https://almofasir.com',
     },
   },
   category: "تفسير الأحلام",

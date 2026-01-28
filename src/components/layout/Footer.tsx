@@ -34,6 +34,7 @@ export default function Footer() {
                     <div suppressHydrationWarning>
                         <h4 className="footer-title">تعلّم</h4>
                         <ul className="footer-links">
+                            <li><Link href="/tafsir-al-ahlam" className="text-[var(--color-gold)]">دليل تفسير الأحلام</Link></li>
                             <li><Link href="/learn/faq">الأسئلة الشرعية</Link></li>
                             <li><Link href="/learn/psychology">علم النفس والأحلام</Link></li>
                             <li><Link href="/learn/videos">فيديوهات قصيرة</Link></li>
