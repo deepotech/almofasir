@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Cairo } from "next/font/google";
 import { GoogleAnalytics } from '@next/third-parties/google';
+import Script from "next/script";
 import "./globals.css";
 
 const cairo = Cairo({
@@ -68,6 +69,12 @@ export default function RootLayout({
     <html lang="ar" dir="rtl" className={cairo.variable} suppressHydrationWarning>
       <body suppressHydrationWarning>
         <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""} />
+        <Script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6331163447795368"
+          crossOrigin="anonymous"
+          strategy="afterInteractive"
+        />
         <HomePageJsonLd />
         <StarBackground />
         <AuthProvider>
