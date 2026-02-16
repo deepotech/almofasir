@@ -58,6 +58,8 @@ export interface IDream extends Document {
         publishedAt: Date;
     };
     seoSlug?: string; // SEO-friendly URL slug
+    slug_new?: string; // Temporary migration field
+    previousSlugs?: string[]; // History of old slugs (for redirect lookup)
     status: 'pending' | 'completed' | 'reviewed';
     requestHumanReview: boolean;
     humanReviewStatus: 'none' | 'pending' | 'completed';
@@ -149,12 +151,20 @@ const DreamSchema: Schema = new Schema(
             isAnonymous: { type: Boolean, default: true },
             publishedAt: { type: Date }
         },
-        seoSlug: { type: String, index: true }, // SEO-friendly URL slug
+        seoSlug: { type: String }, // SEO-friendly URL slug
+        slug_new: { type: String }, // Temporary field for migration
+        previousSlugs: [{ type: String }], // History of old slugs
         status: { type: String, enum: ['pending', 'completed', 'reviewed'], default: 'pending' },
         requestHumanReview: { type: Boolean, default: false },
         humanReviewStatus: { type: String, enum: ['none', 'pending', 'completed'], default: 'none' },
     },
     { timestamps: true }
 );
+// Unique sparse index on seoSlug — prevents duplicate slugs
+// sparse: true means null/missing values won't conflict
+DreamSchema.index({ seoSlug: 1 }, { unique: true, sparse: true });
+
+// Index on previousSlugs for fast redirect lookups
+DreamSchema.index({ previousSlugs: 1 });
 
 export default mongoose.models.Dream || mongoose.model<IDream>('Dream', DreamSchema);

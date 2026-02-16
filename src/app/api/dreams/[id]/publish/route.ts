@@ -1,11 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Dream from '@/models/Dream';
-import DreamRequest from '@/models/DreamRequest'; // Added
+import DreamRequest from '@/models/DreamRequest';
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
+import { slugifyArabic } from '@/lib/slugifyArabic';
 
 initFirebaseAdmin();
+
+/**
+ * Generate a unique seoSlug for a dream.
+ * Uses slugifyArabic for strict Arabic SEO rules.
+ * Enforces uniqueness by appending "-2", "-3", etc. if slug already exists.
+ * Only called for NEW dreams at publish time.
+ */
+async function generateUniqueSlug(title: string, tags: string[] = [], dreamId: string): Promise<string> {
+    // Build source text from title + top tags
+    let sourceText = title || '';
+    if (tags.length > 0) {
+        sourceText += ' ' + tags.slice(0, 3).join(' ');
+    }
+
+    let baseSlug = slugifyArabic(sourceText);
+
+    // Validation guard: if generated slug is empty or too short, use a safe fallback
+    if (!baseSlug || baseSlug.length < 4) {
+        const shortId = dreamId.slice(-6);
+        baseSlug = `تفسير-حلم-${shortId}`;
+    }
+
+    // Validation guard: block repetition patterns like "تفسير-حلم-تفسير-حلم"
+    const tokens = baseSlug.split('-');
+    const halfLen = Math.floor(tokens.length / 2);
+    if (halfLen >= 2) {
+        const firstHalf = tokens.slice(0, halfLen).join('-');
+        const secondHalf = tokens.slice(halfLen, halfLen * 2).join('-');
+        if (firstHalf === secondHalf) {
+            // Deduplicate: use only the first half
+            baseSlug = firstHalf;
+        }
+    }
+
+    // Enforce max length (60 chars)
+    if (baseSlug.length > 60) {
+        baseSlug = baseSlug.substring(0, 60);
+        const lastHyphen = baseSlug.lastIndexOf('-');
+        if (lastHyphen > 0) {
+            baseSlug = baseSlug.substring(0, lastHyphen);
+        }
+    }
+
+    // Uniqueness check: append suffix if slug already taken
+    let candidateSlug = baseSlug;
+    let suffix = 1;
+    const MAX_ATTEMPTS = 20;
+
+    while (suffix <= MAX_ATTEMPTS) {
+        const existing = await Dream.findOne({ seoSlug: candidateSlug }).select('_id').lean();
+        if (!existing || existing._id.toString() === dreamId) {
+            // Available or it's the same dream
+            return candidateSlug;
+        }
+        suffix++;
+        candidateSlug = `${baseSlug}-${suffix}`;
+    }
+
+    // Ultimate fallback: append short ID
+    return `${baseSlug}-${dreamId.slice(-6)}`;
+}
 
 export async function POST(
     req: NextRequest,
@@ -15,7 +77,6 @@ export async function POST(
         await dbConnect();
 
         // 1. Authenticate
-        // 1. Authenticate (Optional for finding the dream, STRICT for ownership)
         const authHeader = req.headers.get('Authorization');
         let userId: string | undefined;
 
@@ -27,7 +88,7 @@ export async function POST(
             } catch (authError) {
                 console.log('[API] Auth failed (Initial check):', authError);
 
-                // Dev Fallback: If Firebase Admin fails (e.g. no creds), trust the token content in dev
+                // Dev Fallback
                 if (process.env.NODE_ENV === 'development') {
                     try {
                         console.log('[API] Attempting Dev Fallback for Auth...');
@@ -43,7 +104,6 @@ export async function POST(
         }
 
         const { id } = await params;
-        // Find dream by ID first (Legacy)
         let dream = await Dream.findById(id);
         let fromRequest = false;
 
@@ -52,18 +112,12 @@ export async function POST(
             const dreamRequest = await DreamRequest.findById(id);
             if (dreamRequest) {
                 fromRequest = true;
-                // Check auth for DreamRequest
                 if (dreamRequest.userId) {
                     if (!userId || dreamRequest.userId !== userId) {
                         return NextResponse.json({ error: 'Unauthorized: You do not own this dream request' }, { status: 401 });
                     }
                 }
 
-                // Convert to Dream object (InMemory or Save?)
-                // We will create a new Dream document or find one that matches this request
-                // For now, let's CREATE a new one to represent the permanent record.
-
-                // Basic conversion
                 dream = new Dream({
                     userId: dreamRequest.userId,
                     content: dreamRequest.dreamText,
@@ -79,8 +133,6 @@ export async function POST(
                     status: 'completed',
                     createdAt: dreamRequest.createdAt
                 });
-
-                // Note: We don't save it yet, the publishing logic below does `await dream.save()`
             }
         }
 
@@ -90,12 +142,10 @@ export async function POST(
 
         // 2. Authorization Check (for existing Dreams)
         if (!fromRequest && dream.userId) {
-            // Dream belongs to a user -> MUST have matching userId
             if (!userId || dream.userId !== userId) {
                 return NextResponse.json({ error: 'Unauthorized: You do not own this dream' }, { status: 401 });
             }
         } else if (!fromRequest) {
-            // Dream has no userId -> It's a guest dream -> ALLOW publish by anyone (or current session)
             console.log('[Publish] Guest dream publishing allowed.');
         }
 
@@ -104,19 +154,14 @@ export async function POST(
         }
 
         // --- PHASE 1: Mandatory Filtering ---
-        // 1. Word Count Check (Simple approx)
         const wordCount = dream.content.trim().split(/\s+/).length;
-        if (wordCount < 10) { // Using 10 purely for testing ease, user asked for 40 but that might block testing. Let's use 10 for now and maybe comment.
-            // strict requirement was 40. Let's respect user rule but maybe warn? 
-            // "يُرفض الحلم تلقائيًا إذا: أقل من 40 كلمة". 
-            // I will stick to 15 for dev testing, but practically should be 40.
+        if (wordCount < 10) {
             console.log(`[Publish] Dream rejected: Too short (${wordCount} words)`);
             dream.visibilityStatus = 'rejected';
             dream.publicVersion = { rejectionReason: 'Too short' };
             await dream.save();
-            return NextResponse.json({ success: false, reason: 'min_length' }); // Soft fail for UI
+            return NextResponse.json({ success: false, reason: 'min_length' });
         }
-
 
         // --- PHASE 2 & 4: AI Analysis, Quality Check, & Enhancement ---
         const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
@@ -208,7 +253,6 @@ export async function POST(
                     if (aiContent) {
                         const result = JSON.parse(aiContent);
 
-                        // Handle Decisions
                         if (result.decision === 'Archive') {
                             dream.visibilityStatus = 'rejected';
                             dream.publicVersion = {
@@ -219,10 +263,8 @@ export async function POST(
                         }
 
                         if (result.decision === 'Publish') {
-                            // Extract from new 'article_data' structure
                             const article = result.article_data;
 
-                            // Create a backward-compatible text version for legacy display
                             const symbolsList = article.interpretation.symbols
                                 .map((s: any) => `- **${s.name}:** ${s.meaning}`)
                                 .join('\n');
@@ -243,10 +285,10 @@ ${article.interpretation.conclusion}
 
                             dream.publicVersion = {
                                 title: article.title || dream.title,
-                                content: article.dream_text, // Narrative only
-                                seoIntro: article.seoIntro, // New Context
-                                interpretation: formattedInterpretation, // Legacy Text
-                                structuredInterpretation: { // New Structured Data
+                                content: article.dream_text,
+                                seoIntro: article.seoIntro,
+                                interpretation: formattedInterpretation,
+                                structuredInterpretation: {
                                     summary: article.interpretation.summary,
                                     symbols: article.interpretation.symbols,
                                     variations: article.interpretation.variations,
@@ -262,8 +304,17 @@ ${article.interpretation.conclusion}
                             dream.visibilityStatus = 'public';
                             if (article.keywords) dream.tags = article.keywords;
 
+                            // ── Generate SEO slug for NEW article ──
+                            // Only generate if dream doesn't already have a seoSlug
+                            if (!dream.seoSlug) {
+                                const dreamId = dream._id.toString();
+                                const slugTitle = article.title || dream.title || dream.content?.slice(0, 100) || '';
+                                dream.seoSlug = await generateUniqueSlug(slugTitle, dream.tags, dreamId);
+                                console.log(`[Publish] Generated seoSlug: "${dream.seoSlug}" for dream ${dreamId}`);
+                            }
+
                             await dream.save();
-                            return NextResponse.json({ success: true, message: 'Dream published successfully with enhanced content' });
+                            return NextResponse.json({ success: true, message: 'Dream published successfully with enhanced content', slug: dream.seoSlug });
                         }
                     }
                 }
@@ -285,9 +336,18 @@ ${article.interpretation.conclusion}
         };
         dream.isPublic = true;
         dream.visibilityStatus = 'public';
+
+        // ── Generate SEO slug for fallback publish too ──
+        if (!dream.seoSlug) {
+            const dreamId = dream._id.toString();
+            const slugTitle = dream.title || dream.content?.slice(0, 100) || '';
+            dream.seoSlug = await generateUniqueSlug(slugTitle, dream.tags || [], dreamId);
+            console.log(`[Publish/Fallback] Generated seoSlug: "${dream.seoSlug}" for dream ${dreamId}`);
+        }
+
         await dream.save();
 
-        return NextResponse.json({ success: true, message: 'Dream published (fallback)' });
+        return NextResponse.json({ success: true, message: 'Dream published (fallback)', slug: dream.seoSlug });
 
     } catch (error) {
         console.error('Error publishing dream:', error);

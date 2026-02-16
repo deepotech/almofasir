@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Dream from '@/models/Dream';
-import { generateSlug } from '@/lib/slugify';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * GET /api/dreams/public
+ * 
+ * Strategy A: Returns seoSlug as the slug field (read-only, no self-healing writes).
+ * Old dreams keep their existing seoSlug. New dreams get it at publish time.
+ */
 export async function GET(req: NextRequest) {
     try {
         await dbConnect();
@@ -29,26 +34,10 @@ export async function GET(req: NextRequest) {
             'publicVersion.content': { $exists: true }
         });
 
-        // Transform data to simple structure with SEO slug
-        // Transform data to simple structure with SEO slug (and lazy save)
-        const publicDreams = await Promise.all(dreams.map(async d => {
+        const publicDreams = dreams.map(d => {
             const id = d._id.toString();
-            // Use existing slug or generate new one
-            let slug = d.seoSlug;
-
-            if (!slug) {
-                slug = generateSlug(
-                    d.publicVersion?.title || d.publicVersion?.content || '',
-                    d.tags,
-                    id
-                );
-                // Self-healing: Save the generated slug to DB
-                try {
-                    await Dream.findByIdAndUpdate(d._id, { seoSlug: slug });
-                } catch (err) {
-                    console.error('Failed to save slug for dream:', id, err);
-                }
-            }
+            // Use seoSlug if available, otherwise fall back to id
+            const slug = d.seoSlug || id;
 
             return {
                 id,
@@ -60,7 +49,7 @@ export async function GET(req: NextRequest) {
                 tags: d.tags,
                 date: d.publicVersion.publishedAt || d.createdAt
             };
-        }));
+        });
 
         return NextResponse.json({
             dreams: publicDreams,
@@ -74,4 +63,3 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
-

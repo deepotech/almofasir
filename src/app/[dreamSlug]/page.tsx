@@ -1,51 +1,49 @@
+
 import { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import dbConnect from '@/lib/mongodb';
 import Dream from '@/models/Dream';
-import { generateSlug, extractIdFromSlug, isMongoId, generateSeoTitle, generateMetaDescription } from '@/lib/slugify';
+import { generateSlug, isMongoId, generateSeoTitle, generateMetaDescription } from '@/lib/slugify';
 import { generateArticleSchema, generateBreadcrumbSchema } from '@/lib/seo';
 import DreamDetailsContent from '@/components/DreamDetailsContent';
 
-// Helper to fetch dream by slug or ID
+export const dynamic = 'force-dynamic';
+
+/**
+ * Strategy A: Lookup by seoSlug (single source of truth for URL).
+ * - Old dreams have their original seoSlug (kept as-is).
+ * - New dreams get a clean slugifyArabic-generated seoSlug at publish time.
+ * - No redirects, no previousSlugs lookups.
+ * - Fallback: lookup by MongoDB _id for backward compatibility.
+ */
 async function getDream(slugOrId: string) {
     await dbConnect();
 
-    let dream;
+    // 1. Try seoSlug (primary — this is the canonical URL field)
+    let dream = await Dream.findOne({
+        seoSlug: slugOrId,
+        visibilityStatus: 'public',
+        'publicVersion.content': { $exists: true }
+    }).lean();
 
+    if (dream) return dream;
+
+    // 2. Fallback: direct Mongo _id lookup (backward compat for old bookmarks)
     if (isMongoId(slugOrId)) {
         dream = await Dream.findOne({
             _id: slugOrId,
             visibilityStatus: 'public',
             'publicVersion.content': { $exists: true }
         }).lean();
-    } else {
-        dream = await Dream.findOne({
-            seoSlug: slugOrId,
-            visibilityStatus: 'public',
-            'publicVersion.content': { $exists: true }
-        }).lean();
-
-        if (!dream) {
-            const extractedId = extractIdFromSlug(slugOrId);
-            if (extractedId) {
-                const dreams = await Dream.find({
-                    visibilityStatus: 'public',
-                    'publicVersion.content': { $exists: true }
-                }).lean();
-
-                dream = dreams.find(d =>
-                    d._id.toString().endsWith(extractedId)
-                );
-            }
-        }
+        if (dream) return dream;
     }
 
-    return dream;
+    return null;
 }
 
-// Generate dynamic metadata for SEO
 export async function generateMetadata({ params }: { params: Promise<{ dreamSlug: string }> }): Promise<Metadata> {
     const { dreamSlug } = await params;
-    const dream = await getDream(dreamSlug);
+    const dream = await getDream(decodeURIComponent(dreamSlug));
 
     if (!dream) {
         return {
@@ -65,13 +63,9 @@ export async function generateMetadata({ params }: { params: Promise<{ dreamSlug
         dream.tags
     );
 
-    const slug = dream.seoSlug || generateSlug(
-        dream.publicVersion?.title || dream.publicVersion?.content || '',
-        dream.tags,
-        dream._id.toString()
-    );
-
-    const canonicalUrl = `https://almofasser.com/${slug}`;
+    // Use seoSlug as the canonical slug (single source of truth)
+    const slug = dream.seoSlug || dream._id.toString();
+    const canonicalUrl = `https://almofasir.com/${slug}`;
 
     return {
         title: `${seoTitle} - المفسّر`,
@@ -98,48 +92,42 @@ export async function generateMetadata({ params }: { params: Promise<{ dreamSlug
 
 export default async function DreamDetailsPage({ params }: { params: Promise<{ dreamSlug: string }> }) {
     const { dreamSlug } = await params;
-    const dream = await getDream(dreamSlug);
+    const decodedSlug = decodeURIComponent(dreamSlug);
 
-    // Generate JSON-LD structured data
-    let jsonLd = null;
-    let breadcrumbJsonLd = null;
+    const dream = await getDream(decodedSlug);
 
-    if (dream) {
-        const slug = dream.seoSlug || generateSlug(
-            dream.publicVersion?.title || dream.publicVersion?.content || '',
-            dream.tags || [],
-            dream._id.toString()
-        );
-
-        const canonicalUrl = `https://almofasser.com/${slug}`;
-        const seoTitle = generateSeoTitle(
-            dream.publicVersion?.title,
-            dream.tags,
-            dream.publicVersion?.content || ''
-        );
-        const metaDescription = generateMetaDescription(
-            dream.publicVersion?.interpretation || '',
-            dream.tags
-        );
-
-        jsonLd = generateArticleSchema({
-            title: seoTitle,
-            description: metaDescription,
-            url: canonicalUrl,
-            datePublished: (dream.publicVersion?.publishedAt || dream.createdAt)?.toISOString(),
-            tags: dream.tags
-        });
-
-        breadcrumbJsonLd = generateBreadcrumbSchema([
-            { name: 'الرئيسية', url: 'https://almofasser.com/' },
-            { name: 'أحلام مفسرة', url: 'https://almofasser.com/interpreted-dreams' }, // Keep this parent? Yes.
-            { name: seoTitle, url: canonicalUrl }
-        ]);
+    if (!dream) {
+        notFound();
     }
+
+    const slug = dream.seoSlug || dream._id.toString();
+    const canonicalUrl = `https://almofasir.com/${slug}`;
+    const seoTitle = generateSeoTitle(
+        dream.publicVersion?.title,
+        dream.tags,
+        dream.publicVersion?.content || ''
+    );
+    const metaDescription = generateMetaDescription(
+        dream.publicVersion?.interpretation || '',
+        dream.tags
+    );
+
+    const jsonLd = generateArticleSchema({
+        title: seoTitle,
+        description: metaDescription,
+        url: canonicalUrl,
+        datePublished: (dream.publicVersion?.publishedAt || dream.createdAt)?.toISOString(),
+        tags: dream.tags
+    });
+
+    const breadcrumbJsonLd = generateBreadcrumbSchema([
+        { name: 'الرئيسية', url: 'https://almofasir.com/' },
+        { name: 'أحلام مفسرة', url: 'https://almofasir.com/interpreted-dreams' },
+        { name: seoTitle, url: canonicalUrl }
+    ]);
 
     return (
         <>
-            {/* JSON-LD Structured Data */}
             {jsonLd && (
                 <script
                     type="application/ld+json"
@@ -152,8 +140,7 @@ export default async function DreamDetailsPage({ params }: { params: Promise<{ d
                     dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
                 />
             )}
-
-            <DreamDetailsContent id={dreamSlug} />
+            <DreamDetailsContent id={slug} />
         </>
     );
 }

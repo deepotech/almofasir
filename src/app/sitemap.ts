@@ -1,9 +1,8 @@
 import { MetadataRoute } from 'next';
 import { dreamSymbols } from '@/data/symbols';
 import { interpreters } from '@/lib/interpreters';
-import DreamRequest from '@/models/DreamRequest';
 import dbConnect from '@/lib/mongodb';
-// import Dream from '@/models/Dream'; // Legacy model removed
+import Dream from '@/models/Dream';
 
 const BASE_URL = 'https://almofasir.com';
 
@@ -125,30 +124,29 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }));
 
     // Dynamic Dream Pages (Fetch from DB)
+    // URL pattern: /{seoSlug} (matches [dreamSlug] route)
+    // Strategy A: seoSlug is the single canonical field for ALL dreams (old + new).
     let dreamPages: MetadataRoute.Sitemap = [];
     try {
         await dbConnect();
-        // Fetch last 5000 public dreams
-        // Select only necessary fields to reduce payload
-        // We use 'status: completed' or 'isPublic: true' depending on your schema.
-        // Assuming public dreams are those with `isPublic: true` and `seoSlug`.
-        const dreams = await DreamRequest.find({
-            isPublic: true,
-            status: 'completed',
-            seoSlug: { $exists: true, $ne: null }
+        const dreams = await Dream.find({
+            visibilityStatus: 'public',
+            seoSlug: { $exists: true, $nin: [null, ''] }
         })
-            .select('seoSlug updatedAt createdAt')
-            .sort({ createdAt: -1 })
+            .select('seoSlug updatedAt publicVersion.publishedAt')
+            .sort({ 'publicVersion.publishedAt': -1 })
             .limit(5000)
             .lean();
 
         dreamPages = dreams.map((dream: any) => {
             const slug = dream.seoSlug;
-            // Ensure date string
-            const lastMod = dream.updatedAt ? new Date(dream.updatedAt).toISOString() : currentDate;
+            const lastMod = dream.publicVersion?.publishedAt
+                ? new Date(dream.publicVersion.publishedAt).toISOString()
+                : (dream.updatedAt ? new Date(dream.updatedAt).toISOString() : currentDate);
 
             return {
-                url: `${BASE_URL}/interpreted-dreams/${slug}`, // Correct path
+                // Root-level slug path (matches /[dreamSlug]/page.tsx)
+                url: `${BASE_URL}/${slug}`,
                 lastModified: lastMod,
                 changeFrequency: 'weekly' as const,
                 priority: 0.7,
@@ -157,7 +155,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     } catch (error) {
         console.error('Error generating dynamic sitemap for dreams:', error);
-        // Continue with static pages even if DB fails
     }
 
     return [...staticPages, ...symbolPages, ...interpreterPages, ...dreamPages];

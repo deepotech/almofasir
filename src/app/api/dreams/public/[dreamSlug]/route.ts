@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Dream from '@/models/Dream';
-import { generateSlug, extractIdFromSlug, isMongoId } from '@/lib/slugify';
+import { isMongoId } from '@/lib/slugify';
 
+/**
+ * GET /api/dreams/public/[dreamSlug]
+ * 
+ * Strategy A: Lookup by seoSlug (single field, no migration, no self-healing writes).
+ * Fallback to _id for backward compatibility.
+ */
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ dreamSlug: string }> }
@@ -13,34 +19,20 @@ export async function GET(
 
         let dream;
 
-        // Check if it's a raw MongoDB ID or a SEO slug
         if (isMongoId(slugOrId)) {
-            // Direct ID lookup
+            // Direct ID lookup (backward compat)
             dream = await Dream.findOne({
                 _id: slugOrId,
                 visibilityStatus: 'public',
                 'publicVersion.content': { $exists: true }
             }).select('publicVersion tags mood createdAt seoSlug');
         } else {
-            // Slug-based lookup: first try seoSlug field
+            // Slug-based lookup: seoSlug field
             dream = await Dream.findOne({
                 seoSlug: slugOrId,
                 visibilityStatus: 'public',
                 'publicVersion.content': { $exists: true }
             }).select('publicVersion tags mood createdAt seoSlug');
-
-            // If not found, try extracting ID from slug
-            if (!dream) {
-                const extractedId = extractIdFromSlug(slugOrId);
-                if (extractedId) {
-                    // Find by partial ID match (last 6 chars)
-                    dream = await Dream.findOne({
-                        visibilityStatus: 'public',
-                        'publicVersion.content': { $exists: true }
-                    }).where('_id').regex(new RegExp(`${extractedId}$`, 'i'))
-                        .select('publicVersion tags mood createdAt seoSlug');
-                }
-            }
         }
 
         if (!dream) {
@@ -48,16 +40,7 @@ export async function GET(
         }
 
         const id = dream._id.toString();
-        const slug = dream.seoSlug || generateSlug(
-            dream.publicVersion?.title || dream.publicVersion?.content || '',
-            dream.tags,
-            id
-        );
-
-        // Update seoSlug if it doesn't exist
-        if (!dream.seoSlug) {
-            await Dream.findByIdAndUpdate(id, { seoSlug: slug });
-        }
+        const slug = dream.seoSlug || id;
 
         return NextResponse.json({
             id,
@@ -65,6 +48,9 @@ export async function GET(
             title: dream.publicVersion.title,
             content: dream.publicVersion.content,
             interpretation: dream.publicVersion.interpretation,
+            structuredInterpretation: dream.publicVersion.structuredInterpretation,
+            seoIntro: dream.publicVersion.seoIntro,
+            faqs: dream.publicVersion.faqs,
             mood: dream.mood,
             tags: dream.tags,
             date: dream.publicVersion.publishedAt || dream.createdAt
@@ -75,4 +61,3 @@ export async function GET(
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }
-

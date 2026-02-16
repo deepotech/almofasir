@@ -166,7 +166,7 @@ export default function Header() {
                 {/* Drawer Header */}
                 <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
                     <Link href="/" className="logo text-lg" onClick={closeMobileMenu}>
-                        <div className="logo-icon w-8 h-8 text-base">🌙</div>
+                        <div className="logo-icon w-8 h-8 text-base" suppressHydrationWarning>🌙</div>
                         <span>المُفسِّر</span>
                     </Link>
                     <button
