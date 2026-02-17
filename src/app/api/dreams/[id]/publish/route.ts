@@ -71,9 +71,10 @@ async function generateUniqueSlug(title: string, tags: string[] = [], dreamId: s
 
 /**
  * Calculate a quality score based on the generated article structure.
+ * Updated to validate the enhanced SEO article requirements.
  */
 function calculateQualityScore(article: any): number {
-    let score = 70; // Base score
+    let score = 60; // Base score
 
     // 1. Snippet Summary Length (ideal: 100-300 chars)
     if (article.snippetSummary && article.snippetSummary.length >= 100 && article.snippetSummary.length <= 350) {
@@ -84,25 +85,180 @@ function calculateQualityScore(article: any): number {
     if (article.faqs && Array.isArray(article.faqs)) {
         if (article.faqs.length >= 5) score += 5;
         if (article.faqs.length >= 6) score += 2; // Bonus for 6+
+        if (article.faqs.length === 7) score += 1; // Max FAQ bonus
     }
 
-    // 3. Meta Title Length (ideal: <= 60 chars)
-    if (article.metaTitle && article.metaTitle.length <= 60) {
+    // 3. Meta Title Length (ideal: <= 58 chars)
+    if (article.metaTitle && article.metaTitle.length <= 58) {
         score += 3;
     }
 
-    // 4. Meta Description Length (ideal: 120-160 chars)
-    if (article.metaDescription && article.metaDescription.length >= 100 && article.metaDescription.length <= 160) {
+    // 4. Meta Description Length (ideal: 100-155 chars)
+    if (article.metaDescription && article.metaDescription.length >= 100 && article.metaDescription.length <= 155) {
         score += 3;
     }
 
-    // 5. Structure Presence
-    if (article.sections && article.sections.length >= 3) score += 5;
+    // 5. Sections count (ideal: >= 7)
+    if (article.sections && Array.isArray(article.sections)) {
+        if (article.sections.length >= 7) score += 5;
+        if (article.sections.length >= 8) score += 2; // Bonus for extra sections
+
+        // 6. Check for subsections in التفسير حسب تفاصيل الحلم
+        const detailSection = article.sections.find((s: any) => s.subsections && Array.isArray(s.subsections));
+        if (detailSection && detailSection.subsections.length >= 4) {
+            score += 4;
+        }
+    }
+
+    // 7. dream_text word count (ideal: 90-160 words)
+    if (article.dream_text) {
+        const dreamWordCount = article.dream_text.trim().split(/\s+/).length;
+        if (dreamWordCount >= 90 && dreamWordCount <= 160) score += 3;
+    }
+
+    // 8. Primary symbol and secondary symbols
+    if (article.primarySymbol) score += 3;
+    if (article.secondarySymbols && article.secondarySymbols.length >= 2) score += 2;
+
+    // 9. Internal link anchors
     if (article.internalLinkAnchors && article.internalLinkAnchors.length >= 2) score += 2;
-    if (article.primarySymbol) score += 5;
 
     // Cap at 100
     return Math.min(score, 100);
+}
+
+/**
+ * Count total words across all text content in the article.
+ * Sums: seoIntro, snippetSummary, dream_text, all section contents,
+ * all subsection contents, all FAQ answers, all bullets.
+ */
+function countArticleWords(article: any): number {
+    const countWords = (text: string | undefined): number => {
+        if (!text || typeof text !== 'string') return 0;
+        return text.trim().split(/\s+/).filter(Boolean).length;
+    };
+
+    let total = 0;
+    total += countWords(article.seoIntro);
+    total += countWords(article.snippetSummary);
+    total += countWords(article.dream_text);
+
+    if (article.sections && Array.isArray(article.sections)) {
+        for (const section of article.sections) {
+            total += countWords(section.content);
+            if (section.bullets && Array.isArray(section.bullets)) {
+                for (const bullet of section.bullets) {
+                    total += countWords(bullet);
+                }
+            }
+            if (section.subsections && Array.isArray(section.subsections)) {
+                for (const sub of section.subsections) {
+                    total += countWords(sub.content);
+                }
+            }
+        }
+    }
+
+    if (article.faqs && Array.isArray(article.faqs)) {
+        for (const faq of article.faqs) {
+            total += countWords(faq.question);
+            total += countWords(faq.answer);
+        }
+    }
+
+    return total;
+}
+
+/**
+ * Validate article structure against hard requirements.
+ * Returns { valid: true } or { valid: false, failures: string[] }
+ */
+function validateArticleStructure(article: any): { valid: boolean; failures: string[] } {
+    const failures: string[] = [];
+    const countWords = (text: string | undefined): number => {
+        if (!text || typeof text !== 'string') return 0;
+        return text.trim().split(/\s+/).filter(Boolean).length;
+    };
+
+    // ── Required top-level fields ──
+    const requiredFields = ['metaTitle', 'metaDescription', 'h1', 'primarySymbol', 'snippetSummary', 'seoIntro', 'dream_text', 'sections', 'faqs'];
+    for (const field of requiredFields) {
+        if (!article[field]) {
+            failures.push(`missing_field:${field}`);
+        }
+    }
+
+    // ── Total word count >= 900 ──
+    const totalWords = countArticleWords(article);
+    if (totalWords < 900) {
+        failures.push(`total_words:${totalWords}<900`);
+    }
+
+    // ── Sections >= 7 ──
+    if (!article.sections || !Array.isArray(article.sections) || article.sections.length < 7) {
+        failures.push(`sections:${article.sections?.length || 0}<7`);
+    }
+
+    // ── FAQs between 5 and 7 ──
+    if (!article.faqs || !Array.isArray(article.faqs) || article.faqs.length < 5) {
+        failures.push(`faqs:${article.faqs?.length || 0}<5`);
+    }
+
+    // ── Required section headings ──
+    const requiredHeadings = [
+        'متى يكون الحلم بشارة',
+        'متى يكون الحلم تنبيه',
+        'ماذا تفعل بعد'
+    ];
+    if (article.sections && Array.isArray(article.sections)) {
+        const headings = article.sections.map((s: any) => s.heading || '').join(' ');
+        for (const req of requiredHeadings) {
+            if (!headings.includes(req)) {
+                failures.push(`missing_heading:${req}`);
+            }
+        }
+
+        // ── Subsections >= 4 in التفسير حسب تفاصيل الحلم ──
+        const detailSection = article.sections.find((s: any) =>
+            s.heading && s.heading.includes('تفاصيل') && s.subsections
+        );
+        if (!detailSection || !Array.isArray(detailSection.subsections) || detailSection.subsections.length < 4) {
+            failures.push(`subsections:${detailSection?.subsections?.length || 0}<4`);
+        }
+
+        // ── Content sections word count >= 80 (skip bullet sections) ──
+        for (const section of article.sections) {
+            if (section.content && !section.bullets) {
+                const wc = countWords(section.content);
+                if (wc < 80) {
+                    failures.push(`short_section:"${section.heading}"=${wc}words`);
+                }
+            }
+            // Subsection content >= 60 words
+            if (section.subsections && Array.isArray(section.subsections)) {
+                for (const sub of section.subsections) {
+                    const wc = countWords(sub.content);
+                    if (wc < 60) {
+                        failures.push(`short_subsection:"${sub.heading}"=${wc}words`);
+                    }
+                }
+            }
+        }
+    }
+
+    // ── dream_text word count: 90-160 ──
+    const dreamWords = countWords(article.dream_text);
+    if (dreamWords < 90 || dreamWords > 160) {
+        failures.push(`dream_text_words:${dreamWords} (need 90-160)`);
+    }
+
+    // ── snippetSummary >= 35 words ──
+    const snippetWords = countWords(article.snippetSummary);
+    if (snippetWords < 35) {
+        failures.push(`snippetSummary:${snippetWords}<35words`);
+    }
+
+    return { valid: failures.length === 0, failures };
 }
 
 export async function POST(
@@ -199,160 +355,302 @@ export async function POST(
             return NextResponse.json({ success: false, reason: 'min_length' });
         }
 
-        // --- PHASE 2 & 4: AI Analysis, Quality Check, & Enhancement ---
+        // --- PHASE 2 & 4: AI Analysis, Quality Check, Enhancement & Retry ---
         const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
         if (OPENROUTER_API_KEY) {
             const systemPrompt = `
 أنت خبير تفسير أحلام ومحرر SEO عربي محترف لموقع "المفسر".
-مهمتك: تحويل "نص الحلم" + "سياق الرائي" إلى مقال SEO مفيد وطبيعي، بدون بصمة AI واضحة.
+مهمتك: تحويل "نص الحلم" + "سياق الرائي" إلى مقال SEO كامل (ليس ملخصاً)، مفيد وطبيعي، بدون بصمة AI واضحة.
 
-ممنوعات صارمة:
-- ممنوع عناوين طويلة أو محشوة أو تكرار كلمات.
+⚠️ ممنوع إخراج محتوى قصير أو عام أو مكرر.
+إذا لم تستطع الالتزام بالطول والهيكل = decision: "Archive".
+
+═══════════════════════════════════
+██ ممنوعات صارمة (HARD RULES) ██
+═══════════════════════════════════
+- ممنوع عناوين طويلة أو محشوة أو تكرار كلمات في العنوان.
 - ممنوع اختلاق اقتباسات من ابن سيرين/النابلسي أو نسب كلام حرفي لهم.
-- ممنوع تكرار قوالب ثابتة (نفس افتتاحية/نفس جمل) عبر المقالات.
-- ممنوع حشو "في المنام" أو "يدل على" في كل سطر.
+- ممنوع تكرار نفس الصيغة/الافتتاحية/الجمل الانتقالية عبر المقالات — نوّع دائمًا.
+- ممنوع حشو "في المنام" أو "يدل على" أو "قد يشير إلى" في كل سطر.
+- لا تضع الحالة الاجتماعية في العنوان إذا لم تُذكر في الحلم أو السياق.
+- ممنوع إنتاج مقال أقل من 900 كلمة. إذا لم تستطع الوصول لـ 900 كلمة = Archive.
 
-قواعد الجودة:
+═══════════════════════════════════
+██ قواعد الهيكل الإلزامية ██
+═══════════════════════════════════
+- الحد الأدنى للمحتوى النهائي: 900 كلمة (كل النصوص مجتمعة).
+- FAQ: بين 5 و7 أسئلة (إلزامي). كل جواب 2–4 أسطر.
+- sections: على الأقل 7 أقسام (إلزامي).
+- 4 subsections على الأقل في قسم "التفسير حسب تفاصيل الحلم".
+- يجب أن توجد الأقسام التالية حرفياً:
+  1. معنى الحلم بشكل عام
+  2. التفسير حسب تفاصيل الحلم (مع subsections)
+  3. التفسير حسب الحالة الاجتماعية
+  4. الدلالة النفسية للحلم
+  5. متى يكون الحلم بشارة؟
+  6. متى يكون الحلم تنبيهًا؟
+  7. ماذا تفعل بعد هذا الحلم؟
+
+═══════════════════════════════════
+██ قواعد طول المحتوى ██
+═══════════════════════════════════
+- content في كل قسم (ما عدا أقسام bullets): 80–140 كلمة على الأقل.
+- كل subsection.content >= 60 كلمة.
+- dream_text: بين 90 و160 كلمة.
+- seoIntro: بين 45 و70 كلمة بدون سرد الحلم.
+- snippetSummary: >= 35 كلمة (2–3 أسطر مباشرة).
+- كل bullet في أقسام (بشارة/تنبيه/ماذا تفعل): جملة كاملة واضحة.
+
+═══════════════════════════════════
+██ قواعد الجودة والتنويع ██
+═══════════════════════════════════
 - ركّز على "رمز رئيسي واحد" + 2–4 رموز ثانوية فقط.
-- اكتب فقرات قصيرة + نقاط bullets.
-- ابدأ بخلاصة سريعة قابلة للظهور كـ Featured Snippet.
+- اكتب فقرات قصيرة ومتسلسلة منطقيًا.
+- ابدأ بخلاصة سريعة (snippetSummary) قابلة للظهور كـ Featured Snippet.
 - اجعل التفسير مشروطًا بتفاصيل الحلم (القبول/الرفض/الخوف/الشخص/المكان/النتيجة).
+- نوّع في الانتقالات بين الفقرات — لا تستخدم نفس الكلمات الرابطة.
+- اجعل كل قسم يضيف قيمة جديدة فعلية، لا تكرار للمعنى بصياغة مختلفة.
 
-المدخلات التي ستصلك:
+═══════════════════════════════════
+██ المدخلات ██
+═══════════════════════════════════
 - نص الحلم الخام (قد يحتوي معلومات حساسة تم تنظيفها مسبقًا)
 - الحالة الاجتماعية (إن ذُكرت): عزباء/متزوجة/حامل/مطلقة/رجل/غير محدد
 - مشاعر الرائي إن توفرت (خوف/فرح/قلق…)
+- هل الحلم متكرر أم لا
 
-المخرجات المطلوبة (JSON فقط، بنفس الهيكل حرفيًا):
+═══════════════════════════════════
+██ المخرجات (JSON فقط) ██
+═══════════════════════════════════
 
 {
   "decision": "Publish" | "Archive",
   "reason": "سبب مختصر إن كان Archive أو ملاحظة جودة",
   "article_data": {
-    "primarySymbol": "الرمز الرئيسي المستخرج",
-    "secondarySymbols": ["...", "..."],
-    "metaTitle": "عنوان جوجل <= 58 حرف، يتضمن الرمز الرئيسي والحالة إن وجدت",
+    "metaTitle": "عنوان جوجل <= 58 حرف، يتضمن الرمز الرئيسي",
     "metaDescription": "وصف <= 155 حرف يشرح المعنى + عامل يغيّر التفسير",
     "h1": "عنوان الصفحة واضح ومباشر",
-    "seoIntro": "مقدمة قصيرة 45–70 كلمة بدون سرد الحلم",
+    "primarySymbol": "الرمز الرئيسي المستخرج",
+    "secondarySymbols": ["رمز ثانوي 1", "رمز ثانوي 2"],
     "snippetSummary": "2–3 أسطر مباشرة: هل بشارة/تنبيه + ما الذي يغيّر المعنى",
+    "seoIntro": "مقدمة 45–70 كلمة بدون سرد الحلم",
     "dream_text": "إعادة صياغة الحلم بأسلوب قصصي مختصر بضمير الغائب، 90–160 كلمة",
     "sections": [
       {
         "heading": "معنى الحلم بشكل عام",
-        "content": "شرح عام مركز دون حشو"
+        "content": "شرح عام مركز 80–140 كلمة"
       },
       {
         "heading": "التفسير حسب تفاصيل الحلم",
         "subsections": [
-          { "heading": "إذا كان الشعور خوفًا/قلقًا", "content": "..." },
-          { "heading": "إذا حدث قبول/نجاح/تيسير", "content": "..." },
-          { "heading": "إذا حدث رفض/تعطّل/عراقيل", "content": "..." },
-          { "heading": "وجود شخص/مكان واضح في الحلم", "content": "..." }
+          { "heading": "تفصيل 1 مرتبط بالحلم فعلياً", "content": "80–140 كلمة" },
+          { "heading": "تفصيل 2 مرتبط بالحلم فعلياً", "content": "80–140 كلمة" },
+          { "heading": "تفصيل 3 مرتبط بالحلم فعلياً", "content": "80–140 كلمة" },
+          { "heading": "تفصيل 4 مرتبط بالحلم فعلياً", "content": "80–140 كلمة" }
         ]
       },
       {
         "heading": "التفسير حسب الحالة الاجتماعية",
-        "content": "فقرة قصيرة مخصصة للحالة المذكورة، وإن لم تُذكر قدم تفسيرًا عامًا بلا افتراضات."
+        "content": "80–140 كلمة. إن لم تُذكر الحالة قدم تفسيرًا عامًا بلا افتراضات."
       },
       {
         "heading": "الدلالة النفسية للحلم",
-        "content": "تحليل نفسي مرتبط بمشاعر الحلم: ضغط/طموح/ذنب/حاجة للأمان…"
+        "content": "80–140 كلمة. تحليل نفسي مرتبط بمشاعر الحلم."
       },
       {
         "heading": "متى يكون الحلم بشارة؟",
-        "bullets": ["...", "...", "..."]
+        "bullets": ["جملة كاملة 1", "جملة كاملة 2", "جملة كاملة 3"]
       },
       {
         "heading": "متى يكون الحلم تنبيهًا؟",
-        "bullets": ["...", "...", "..."]
+        "bullets": ["جملة كاملة 1", "جملة كاملة 2", "جملة كاملة 3"]
       },
       {
         "heading": "ماذا تفعل بعد هذا الحلم؟",
-        "bullets": ["نصيحة عملية 1", "نصيحة 2", "نصيحة 3"]
+        "bullets": ["نصيحة عملية واضحة 1", "نصيحة عملية واضحة 2", "نصيحة عملية واضحة 3"]
       }
     ],
     "faqs": [
-      { "question": "سؤال شائع مرتبط بالحلم", "answer": "جواب 2–4 أسطر" }
+      { "question": "سؤال شائع مرتبط بالحلم", "answer": "جواب 2–4 أسطر" },
+      { "question": "سؤال 2", "answer": "جواب 2–4 أسطر" },
+      { "question": "سؤال 3", "answer": "جواب 2–4 أسطر" },
+      { "question": "سؤال 4", "answer": "جواب 2–4 أسطر" },
+      { "question": "سؤال 5", "answer": "جواب 2–4 أسطر" }
     ],
     "internalLinkAnchors": [
       "تفسير حلم ...",
       "تفسير حلم ..."
     ],
     "keywords": ["كلمة رئيسية", "تنويعات طبيعية 5–10"],
-    "safetyNote": "تنبيه قصير: التفسير اجتهاد ورمزي ولا يبنى عليه قرار مصيري."
+    "safetyNote": "تنبيه: التفسير اجتهاد ورمزي ولا يُبنى عليه قرار مصيري."
   }
 }
 
-معيار القرار:
-- Publish إذا كان الحلم مفهومًا ويوجد رمز رئيسي واضح ويمكن إنتاج مقال مفيد.
-- Archive إذا كان النص فارغًا/غير مفهوم/سبام/قصير جدًا (< 15 كلمة) أو يحتوي فقط على حروف.
+═══════════════════════════════════
+██ معيار القرار ██
+═══════════════════════════════════
+- Publish: إذا كان الحلم مفهومًا ويوجد رمز رئيسي واضح ويمكن إنتاج مقال >= 900 كلمة.
+- Archive: إذا كان النص فارغًا/غير مفهوم/سبام/قصير جدًا (< 15 كلمة)/حروف فقط/لا يمكن إنتاج محتوى كافٍ.
 
-تحقق قبل الإخراج:
-- metaTitle <= 58 حرف
-- metaDescription <= 155 حرف
-- لا تكرار "تفسير حلم" في العنوان
-- لا اختلاق مصادر
-- أسئلة FAQ بين 5 و7 (يفضل 6)
-- النص طبيعي ومتنوّع
+═══════════════════════════════════
+██ تحقق ذاتي قبل الإخراج ██
+═══════════════════════════════════
+□ metaTitle <= 58 حرف
+□ metaDescription <= 155 حرف
+□ dream_text بين 90 و160 كلمة
+□ لا تكرار "تفسير حلم" في عنوان metaTitle
+□ لا اختلاق اقتباسات أو مصادر
+□ أسئلة FAQ بين 5 و7
+□ sections >= 7 أقسام
+□ subsections >= 4 في "التفسير حسب تفاصيل الحلم"
+□ content في كل قسم >= 80 كلمة (ما عدا bullets)
+□ المقال الكلي >= 900 كلمة
+□ النص طبيعي ومتنوّع بلا تكرار قوالب
+□ لا حالة اجتماعية في العنوان إن لم تُذكر
 `;
 
-            try {
-                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                        "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-                        "X-Title": "Almofasser Publisher",
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        model: "openai/gpt-4o-mini",
-                        messages: [
-                            { role: "system", content: systemPrompt },
-                            {
-                                role: "user",
-                                content: `
+            // ── Fix & Expand retry prompt (used on retry attempts) ──
+            const fixAndExpandPrompt = `
+الناتج السابق غير مطابق لمعايير الجودة.
+أعد إنتاج JSON بنفس الهيكل، لكن أصلح التالي إلزامياً:
+- اجعل إجمالي المقال >= 1000 كلمة.
+- كل section.content (ما عدا أقسام bullets) >= 80 كلمة.
+- كل subsection.content >= 60 كلمة.
+- FAQ = 6 أسئلة مرتبطة مباشرة بالحلم.
+- snippetSummary >= 35 كلمة.
+- لا تضف أحداث جديدة غير موجودة في الحلم.
+- لا تكرر نفس العبارات (يدل على/في المنام) بشكل مزعج.
+أخرج JSON فقط.
+`;
+
+            const userMessage = `
 نص الحلم: ${dream.content}
 
 الحالة الاجتماعية (إن وُجدت): ${dream.socialStatus || "غير محدد"}
 المشاعر الظاهرة: ${dream.mood || "غير مذكور"}
 
 ملاحظات/سياق إضافي (اختياري): ${dream.isRecurring ? 'الحلم متكرر' : 'لا يوجد'}
-`
-                            }
-                        ],
-                        response_format: { type: "json_object" }
-                    })
-                });
+`;
 
-                if (response.ok) {
+            const MAX_RETRIES = 2;
+            let lastArticle: any = null;
+            let lastResult: any = null;
+            let lastValidation: { valid: boolean; failures: string[] } = { valid: false, failures: ['initial'] };
+            let qualityScore = 0;
+            let attempt = 0;
+
+            try {
+                for (attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
+                    const isRetry = attempt > 1;
+
+                    // Build messages array: on retry, include the previous AI output + fix prompt
+                    const messages: Array<{ role: string; content: string }> = [
+                        { role: "system", content: systemPrompt },
+                        { role: "user", content: userMessage }
+                    ];
+
+                    if (isRetry && lastResult) {
+                        // Add previous AI response + fix instructions
+                        messages.push({
+                            role: "assistant",
+                            content: JSON.stringify(lastResult)
+                        });
+                        messages.push({
+                            role: "user",
+                            content: fixAndExpandPrompt + `\n\nالمشاكل المحددة: ${lastValidation.failures.join(' | ')}`
+                        });
+                        console.log(`[Publish] Retry #${attempt - 1}: sending Fix & Expand. Failures: ${lastValidation.failures.join(', ')}`);
+                    }
+
+                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                            "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+                            "X-Title": "Almofasser Publisher",
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            model: "openai/gpt-4o-mini",
+                            messages,
+                            response_format: { type: "json_object" }
+                        })
+                    });
+
+                    if (!response.ok) {
+                        console.error(`[Publish] AI API error (attempt ${attempt}): ${response.status} ${response.statusText}`);
+                        continue; // Try next attempt
+                    }
+
                     const data = await response.json();
-                    const aiContent = data.choices[0]?.message?.content;
-                    if (aiContent) {
-                        const result = JSON.parse(aiContent);
+                    const aiContent = data.choices?.[0]?.message?.content;
 
-                        if (result.decision === 'Archive') {
-                            dream.visibilityStatus = 'rejected';
-                            dream.publicVersion = {
-                                rejectionReason: result.reason || 'AI decided to archive'
-                            };
-                            await dream.save();
-                            return NextResponse.json({ success: false, reason: 'archived', details: result.reason });
+                    if (!aiContent) {
+                        console.error(`[Publish] Empty AI response (attempt ${attempt})`);
+                        continue;
+                    }
+
+                    // ── Parse JSON safely ──
+                    let result: any;
+                    try {
+                        result = JSON.parse(aiContent);
+                    } catch (parseError) {
+                        console.error(`[Publish] JSON parse failed (attempt ${attempt}):`, parseError);
+                        continue;
+                    }
+
+                    // ── Archive decision = stop immediately ──
+                    if (result.decision === 'Archive') {
+                        dream.visibilityStatus = 'rejected';
+                        dream.publicVersion = {
+                            rejectionReason: result.reason || 'AI decided to archive'
+                        };
+                        await dream.save();
+                        return NextResponse.json({ success: false, reason: 'archived', details: result.reason });
+                    }
+
+                    // ── Publish decision: validate structure ──
+                    if (result.decision === 'Publish' && result.article_data) {
+                        lastResult = result;
+                        lastArticle = result.article_data;
+                        qualityScore = calculateQualityScore(lastArticle);
+                        lastValidation = validateArticleStructure(lastArticle);
+
+                        const totalWords = countArticleWords(lastArticle);
+                        console.log(`[Publish] Attempt ${attempt}: qualityScore=${qualityScore}, totalWords=${totalWords}, valid=${lastValidation.valid}, failures=${lastValidation.failures.length}`);
+
+                        // ── Quality Gate: pass if valid AND score >= 80 ──
+                        if (lastValidation.valid && qualityScore >= 80) {
+                            console.log(`[Publish] ✅ Passed quality gate on attempt ${attempt}`);
+                            break; // Exit retry loop — article is good
                         }
 
-                        if (result.decision === 'Publish') {
-                            const article = result.article_data;
-                            const calculatedQualityScore = calculateQualityScore(article);
+                        // ── Failed quality gate ──
+                        if (attempt <= MAX_RETRIES) {
+                            console.log(`[Publish] ⚠️ Failed quality gate (attempt ${attempt}/${MAX_RETRIES + 1}). Retrying...`);
+                            // Let the loop continue to retry
+                        } else {
+                            console.log(`[Publish] ⚠️ Max retries exhausted. Publishing best available result.`);
+                        }
+                    } else {
+                        // Unexpected response format
+                        console.error(`[Publish] Unexpected AI response format (attempt ${attempt}):`, result?.decision);
+                        lastResult = result;
+                    }
+                }
 
-                            // Format internal interpretation for fallback/legacy views if needed
-                            // But primarily we will use the structured data
-                            const legacySymbolsList = article.secondarySymbols && Array.isArray(article.secondarySymbols)
-                                ? article.secondarySymbols.map((s: string) => `- ${s}`).join('\n')
-                                : '';
+                // ── If we have a valid article (even with lower quality), publish it ──
+                if (lastArticle && lastResult?.decision === 'Publish') {
+                    const article = lastArticle;
+                    const calculatedQualityScore = qualityScore;
 
-                            const formattedLegacyInterpretation = `
+                    // Format internal interpretation for fallback/legacy views
+                    const legacySymbolsList = article.secondarySymbols && Array.isArray(article.secondarySymbols)
+                        ? article.secondarySymbols.map((s: string) => `- ${s}`).join('\n')
+                        : '';
+
+                    const formattedLegacyInterpretation = `
 **الخلاصة:**
 ${article.snippetSummary}
 
@@ -362,47 +660,52 @@ ${article.sections && article.sections[0] ? article.sections[0].content : ''}
 **الرموز:**
 - ${article.primarySymbol}
 ${legacySymbolsList}
-                            `.trim();
+                    `.trim();
 
-                            dream.publicVersion = {
-                                title: article.h1 || article.metaTitle || dream.title,
-                                content: article.dream_text,
-                                seoIntro: article.seoIntro,
-                                // Store the new comprehensive structure
-                                comprehensiveInterpretation: {
-                                    primarySymbol: article.primarySymbol,
-                                    secondarySymbols: article.secondarySymbols,
-                                    snippetSummary: article.snippetSummary,
-                                    metaTitle: article.metaTitle,
-                                    metaDescription: article.metaDescription,
-                                    sections: article.sections,
-                                    internalLinkAnchors: article.internalLinkAnchors,
-                                    safetyNote: article.safetyNote
-                                },
-                                // Keep legacy fields for backward compat or just in case
-                                interpretation: formattedLegacyInterpretation,
-                                faqs: article.faqs,
-                                isAnonymous: true,
-                                publishedAt: new Date(),
-                                qualityScore: calculatedQualityScore
-                            };
-                            dream.isPublic = true;
-                            dream.visibilityStatus = 'public';
-                            if (article.keywords) dream.tags = article.keywords;
+                    dream.publicVersion = {
+                        title: article.h1 || article.metaTitle || dream.title,
+                        content: article.dream_text,
+                        seoIntro: article.seoIntro,
+                        // Store the new comprehensive structure
+                        comprehensiveInterpretation: {
+                            primarySymbol: article.primarySymbol,
+                            secondarySymbols: article.secondarySymbols,
+                            snippetSummary: article.snippetSummary,
+                            metaTitle: article.metaTitle,
+                            metaDescription: article.metaDescription,
+                            sections: article.sections,
+                            internalLinkAnchors: article.internalLinkAnchors,
+                            safetyNote: article.safetyNote
+                        },
+                        // Keep legacy fields for backward compat
+                        interpretation: formattedLegacyInterpretation,
+                        faqs: article.faqs,
+                        isAnonymous: true,
+                        publishedAt: new Date(),
+                        qualityScore: calculatedQualityScore
+                    };
+                    dream.isPublic = true;
+                    dream.visibilityStatus = 'public';
+                    if (article.keywords) dream.tags = article.keywords;
 
-                            // ── Generate SEO slug for NEW article ──
-                            // Only generate if dream doesn't already have a seoSlug
-                            if (!dream.seoSlug) {
-                                const dreamId = dream._id.toString();
-                                const slugTitle = article.metaTitle || article.title || dream.content?.slice(0, 100) || '';
-                                dream.seoSlug = await generateUniqueSlug(slugTitle, dream.tags, dreamId);
-                                console.log(`[Publish] Generated seoSlug: "${dream.seoSlug}" for dream ${dreamId}`);
-                            }
-
-                            await dream.save();
-                            return NextResponse.json({ success: true, message: 'Dream published successfully with enhanced content', slug: dream.seoSlug });
-                        }
+                    // ── Generate SEO slug for NEW article ──
+                    if (!dream.seoSlug) {
+                        const dreamId = dream._id.toString();
+                        const slugTitle = article.metaTitle || article.title || dream.content?.slice(0, 100) || '';
+                        dream.seoSlug = await generateUniqueSlug(slugTitle, dream.tags, dreamId);
+                        console.log(`[Publish] Generated seoSlug: "${dream.seoSlug}" for dream ${dreamId}`);
                     }
+
+                    await dream.save();
+
+                    return NextResponse.json({
+                        success: true,
+                        message: `Dream published (attempt ${attempt <= MAX_RETRIES + 1 ? attempt : MAX_RETRIES + 1}, score: ${calculatedQualityScore})`,
+                        slug: dream.seoSlug,
+                        qualityScore: calculatedQualityScore,
+                        validationPassed: lastValidation.valid,
+                        totalWords: countArticleWords(article)
+                    });
                 }
             } catch (error) {
                 console.error('AI Publishing analysis failed:', error);
