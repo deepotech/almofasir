@@ -15,6 +15,15 @@ type RelatedDream = {
     content?: string;
 };
 
+// Helper to format basic markdown (bold, lists) for legacy content
+function formatMarkdown(text: string) {
+    if (!text) return "";
+    return text
+        .replace(/\*\*(.*?)\*\*/g, '<b class="text-[var(--color-primary)]">$1</b>') // Bold with color
+        .replace(/^\s*-\s+(.*)$/gm, '<li class="list-disc mr-5">$1</li>') // List items
+        .replace(/\n/g, '<br/>'); // Line breaks
+}
+
 type DreamArticleProps = {
     dream: any;
     related?: RelatedDream[];
@@ -103,16 +112,16 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
                 </section>
             )}
 
-            {/* ── Dream Narrative (collapsible) - Moved Up for SEO ── */}
+            {/* ── Dream Narrative (collapsible) ── */}
             {pv?.content && (
-                <div className="mb-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/20 overflow-hidden">
+                <div className="mb-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-tertiary)]/30 overflow-hidden shadow-sm transition-all hover:border-[var(--color-border)]/80">
                     <details className="group">
-                        <summary className="cursor-pointer p-4 text-base font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-2 select-none">
-                            <span>📜</span>
-                            <span>اضغط هنا لقراءة نص الحلم الأصلي</span>
-                            <span className="mr-auto transition-transform group-open:rotate-180">▼</span>
+                        <summary className="cursor-pointer p-4 text-base font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-3 select-none bg-[var(--color-bg-secondary)]/50">
+                            <span className="p-1.5 bg-[var(--color-bg-primary)] rounded-md text-lg">📜</span>
+                            <span>اضغط لقراءة تفاصيل الحلم الأصلية</span>
+                            <span className="mr-auto transition-transform duration-300 group-open:rotate-180 opacity-50">▼</span>
                         </summary>
-                        <div className="px-6 pb-6 pt-2 text-lg leading-loose text-[var(--color-text-secondary)] whitespace-pre-line border-t border-[var(--color-border)]/50">
+                        <div className="px-6 pb-6 pt-4 text-lg leading-loose text-[var(--color-text-secondary)] whitespace-pre-line border-t border-[var(--color-border)]/30">
                             {pv.content}
                         </div>
                     </details>
@@ -121,8 +130,8 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
 
             {/* ── Symbols (Primary + Secondary) ── */}
             {primarySymbol && (
-                <div className="mb-8 flex items-center gap-3 flex-wrap">
-                    <span className="px-4 py-2 rounded-full bg-[var(--color-gold)]/20 text-[var(--color-gold)] font-bold text-sm border border-[var(--color-gold)]/30">
+                <div className="mb-8 flex items-center gap-3 flex-wrap animate-fadeIn">
+                    <span className="px-4 py-2 rounded-full bg-[var(--color-gold)]/10 text-[var(--color-gold)] font-bold text-sm border border-[var(--color-gold)]/20 shadow-sm shadow-[var(--color-gold)]/5">
                         🔑 {primarySymbol}
                     </span>
                     {secondarySymbols.map((sym: string) => (
@@ -130,7 +139,7 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
                             key={sym}
                             className="px-3 py-1 rounded-full bg-[var(--color-bg-tertiary)] text-[var(--color-text-muted)] text-xs border border-[var(--color-border)]"
                         >
-                            {sym}
+                            # {sym}
                         </span>
                     ))}
                 </div>
@@ -138,26 +147,29 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
 
             {/* ── Main Sections ── */}
             {sections.length > 0 ? (
-                <div className="space-y-8 mb-12">
+                <div className="space-y-8 mb-16">
                     {sections.map((sec: Section, i: number) => (
-                        <section key={i} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/30 p-6 hover:border-[var(--color-primary)]/20 transition-colors">
-                            <h2 className="text-2xl font-bold mb-4 text-[var(--color-text-primary)]">
+                        <section key={i} className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/20 p-6 md:p-8 hover:border-[var(--color-primary)]/10 transition-colors shadow-sm">
+                            <h2 className="text-2xl md:text-3xl font-bold mb-6 text-[var(--color-text-primary)] flex items-center gap-2">
+                                <span className="w-1.5 h-8 bg-[var(--color-gold)] rounded-full inline-block"></span>
                                 {sec.heading}
                             </h2>
 
                             {sec.content && (
-                                <div className="text-lg leading-loose text-[var(--color-text-secondary)] whitespace-pre-line">
+                                <div className="text-lg leading-9 text-[var(--color-text-secondary)] whitespace-pre-line mb-6 opacity-90">
                                     {sec.content}
                                 </div>
                             )}
 
                             {/* Subsections */}
                             {Array.isArray(sec.subsections) && sec.subsections.length > 0 && (
-                                <div className="mt-5 space-y-4">
+                                <div className="mt-6 grid gap-4">
                                     {sec.subsections.map((sub: SubSection, j: number) => (
-                                        <div key={j} className="rounded-xl bg-[var(--color-bg-tertiary)]/50 p-5 border-r-4 border-r-[var(--color-gold)]/50">
-                                            <h3 className="font-bold text-lg text-[var(--color-gold)] mb-2">{sub.heading}</h3>
-                                            <p className="leading-loose text-[var(--color-text-secondary)]">{sub.content}</p>
+                                        <div key={j} className="rounded-2xl bg-[var(--color-bg-tertiary)]/30 p-5 border border-white/5 hover:border-white/10 transition-colors">
+                                            <h3 className="font-bold text-lg text-[var(--color-gold)] mb-3 flex items-center gap-2">
+                                                🔹 {sub.heading}
+                                            </h3>
+                                            <p className="leading-loose text-[var(--color-text-secondary)] opacity-90">{sub.content}</p>
                                         </div>
                                     ))}
                                 </div>
@@ -165,9 +177,12 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
 
                             {/* Bullets */}
                             {Array.isArray(sec.bullets) && sec.bullets.length > 0 && (
-                                <ul className="mt-4 list-disc pr-6 space-y-2 marker:text-[var(--color-primary)]">
+                                <ul className="mt-6 space-y-3 bg-[var(--color-bg-tertiary)]/20 p-6 rounded-2xl border border-white/5">
                                     {sec.bullets.map((b: string, k: number) => (
-                                        <li key={k} className="leading-relaxed text-[var(--color-text-secondary)]">{b}</li>
+                                        <li key={k} className="leading-relaxed text-[var(--color-text-secondary)] flex items-start gap-3">
+                                            <span className="text-[var(--color-primary)] mt-1.5">•</span>
+                                            <span>{b}</span>
+                                        </li>
                                     ))}
                                 </ul>
                             )}
@@ -175,42 +190,56 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
                     ))}
                 </div>
             ) : (
-                /* Fallback: legacy interpretation text */
+                /* Fallback: legacy interpretation text with Markdown Formatting */
                 pv?.interpretation ? (
-                    <section className="mb-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/30 p-6">
-                        <h2 className="text-xl font-bold mb-3 text-[var(--color-text-primary)]">التفسير</h2>
-                        <div className="text-lg leading-loose text-[var(--color-text-secondary)] whitespace-pre-line">
-                            {typeof pv.interpretation === 'string' ? pv.interpretation : pv.interpretation?.summary}
-                        </div>
+                    <section className="mb-12 rounded-3xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/30 p-6 md:p-8 shadow-sm">
+                        <h2 className="text-2xl font-bold mb-6 text-[var(--color-text-primary)] flex items-center gap-3">
+                            <span className="text-3xl">📖</span>
+                            <span>التفسير المفصل</span>
+                        </h2>
+                        <div
+                            className="prose prose-invert prose-lg max-w-none text-[var(--color-text-secondary)] leading-9"
+                            dangerouslySetInnerHTML={{
+                                __html: formatMarkdown(
+                                    typeof pv.interpretation === 'string' ? pv.interpretation : pv.interpretation?.summary
+                                )
+                            }}
+                        />
                     </section>
                 ) : null
             )}
 
             {/* ── FAQ ── */}
             {faqs.length > 0 && (
-                <section className="mb-12">
-                    <h2 className="text-2xl font-bold mb-6 text-[var(--color-text-primary)] flex items-center gap-2">
-                        <span>❓</span> أسئلة شائعة حول الحلم
+                <section className="mb-16">
+                    <h2 className="text-2xl md:text-3xl font-bold mb-8 text-[var(--color-text-primary)] flex items-center gap-3">
+                        <span className="w-10 h-10 rounded-xl bg-[var(--color-primary)]/20 flex items-center justify-center text-[var(--color-primary)]">❓</span>
+                        <span>أسئلة شائعة حول الحلم</span>
                     </h2>
-                    <div className="space-y-4">
+                    <div className="grid gap-4">
                         {faqs.map((f: FAQ, i: number) => (
                             <details
                                 key={i}
-                                className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/30 overflow-hidden hover:border-[var(--color-gold)]/30 transition-colors"
+                                className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/40 overflow-hidden hover:border-[var(--color-gold)]/30 transition-all duration-300" // Styled details
                                 itemScope
                                 itemType="https://schema.org/Question"
                             >
-                                <summary className="cursor-pointer p-5 font-bold text-lg text-[var(--color-text-primary)] select-none flex items-center justify-between" itemProp="name">
-                                    {f.question}
-                                    <span className="text-[var(--color-text-muted)] group-open:rotate-180 transition-transform text-sm">▼</span>
+                                <summary className="cursor-pointer p-5 font-bold text-lg text-[var(--color-text-primary)] select-none flex items-center justify-between hover:bg-white/5 transition-colors" itemProp="name">
+                                    <span className="flex items-center gap-3">
+                                        <span className="text-[var(--color-text-muted)] text-sm font-normal">#{i + 1}</span>
+                                        {f.question}
+                                    </span>
+                                    <span className="w-6 h-6 rounded-full border border-white/10 flex items-center justify-center text-[var(--color-text-muted)] group-open:rotate-180 group-open:bg-[var(--color-gold)] group-open:border-[var(--color-gold)] group-open:text-black transition-all">
+                                        ▼
+                                    </span>
                                 </summary>
                                 <div
-                                    className="px-5 pb-5 leading-loose text-[var(--color-text-secondary)] border-t border-[var(--color-border)]/50"
+                                    className="px-6 pb-6 pt-2 leading-loose text-[var(--color-text-secondary)] border-t border-[var(--color-border)]/30 bg-[var(--color-bg-tertiary)]/10"
                                     itemScope
                                     itemType="https://schema.org/Answer"
                                     itemProp="acceptedAnswer"
                                 >
-                                    <p className="pt-3" itemProp="text">{f.answer}</p>
+                                    <p className="pt-2 opacity-90" itemProp="text">{f.answer}</p>
                                 </div>
                             </details>
                         ))}
