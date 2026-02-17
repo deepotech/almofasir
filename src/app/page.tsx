@@ -370,18 +370,16 @@ function HomeContent() {
               headers['Authorization'] = `Bearer ${token}`;
             }
 
-            const res = await fetch(`/api/dreams/${currentDreamId}/publish`, {
+            // Fire the publish request — don't await the full response
+            // The server will process AI generation in the background
+            fetch(`/api/dreams/${currentDreamId}/publish`, {
               method: 'POST',
               headers: headers
-            });
+            }).catch(e => console.error('[Publish] Background error:', e));
 
-            if (res.ok) {
-              showToast('تم إرسال حلمك للمراجعة والنشر بنجاح! شكراً لمشاركتك.', 'success');
-              setShowShareModal(false);
-            } else {
-              const data = await res.json();
-              showToast(`حدث خطأ أثناء النشر: ${data.message || data.error}`, 'error');
-            }
+            // Immediately show success and close modal
+            showToast('تم إرسال حلمك للمراجعة والنشر بنجاح! شكراً لمشاركتك. ✨', 'success');
+            setShowShareModal(false);
           } catch (e) {
             console.error(e);
             showToast('حدث خطأ غير متوقع.', 'error');

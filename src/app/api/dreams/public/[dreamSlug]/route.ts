@@ -49,11 +49,23 @@ export async function GET(
             content: dream.publicVersion.content,
             interpretation: dream.publicVersion.interpretation,
             structuredInterpretation: dream.publicVersion.structuredInterpretation,
+            comprehensiveInterpretation: dream.publicVersion.comprehensiveInterpretation,
             seoIntro: dream.publicVersion.seoIntro,
             faqs: dream.publicVersion.faqs,
             mood: dream.mood,
             tags: dream.tags,
-            date: dream.publicVersion.publishedAt || dream.createdAt
+            date: dream.publicVersion.publishedAt || dream.createdAt,
+            publicVersion: {
+                title: dream.publicVersion.title,
+                content: dream.publicVersion.content,
+                seoIntro: dream.publicVersion.seoIntro,
+                interpretation: dream.publicVersion.interpretation,
+                structuredInterpretation: dream.publicVersion.structuredInterpretation,
+                comprehensiveInterpretation: dream.publicVersion.comprehensiveInterpretation,
+                faqs: dream.publicVersion.faqs,
+                publishDate: dream.publicVersion.publishedAt || dream.createdAt,
+                keywords: dream.tags,
+            }
         });
 
     } catch (error) {

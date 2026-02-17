@@ -53,9 +53,25 @@ export interface IDream extends Document {
             psychological: string;
             conclusion: string;
         };
+        comprehensiveInterpretation?: {
+            primarySymbol?: string;
+            secondarySymbols?: string[];
+            snippetSummary?: string;
+            metaTitle?: string;
+            metaDescription?: string;
+            sections?: Array<{
+                heading: string;
+                content?: string;
+                subsections?: Array<{ heading: string; content: string }>;
+                bullets?: string[];
+            }>;
+            internalLinkAnchors?: string[];
+            safetyNote?: string;
+        };
         faqs?: Array<{ question: string; answer: string }>;
         isAnonymous: boolean;
         publishedAt: Date;
+        qualityScore?: number;
     };
     seoSlug?: string; // SEO-friendly URL slug
     slug_new?: string; // Temporary migration field
@@ -144,12 +160,31 @@ const DreamSchema: Schema = new Schema(
                 psychological: { type: String },
                 conclusion: { type: String }
             },
+            comprehensiveInterpretation: {
+                primarySymbol: { type: String },
+                secondarySymbols: [{ type: String }],
+                snippetSummary: { type: String },
+                metaTitle: { type: String },
+                metaDescription: { type: String },
+                sections: [{
+                    heading: { type: String },
+                    content: { type: String },
+                    subsections: [{
+                        heading: { type: String },
+                        content: { type: String }
+                    }],
+                    bullets: [{ type: String }]
+                }],
+                internalLinkAnchors: [{ type: String }],
+                safetyNote: { type: String }
+            },
             faqs: [{
                 question: { type: String },
                 answer: { type: String }
             }],
             isAnonymous: { type: Boolean, default: true },
-            publishedAt: { type: Date }
+            publishedAt: { type: Date },
+            qualityScore: { type: Number }
         },
         seoSlug: { type: String }, // SEO-friendly URL slug
         slug_new: { type: String }, // Temporary field for migration
