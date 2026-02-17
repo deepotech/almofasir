@@ -69,6 +69,42 @@ async function generateUniqueSlug(title: string, tags: string[] = [], dreamId: s
     return `${baseSlug}-${dreamId.slice(-6)}`;
 }
 
+/**
+ * Calculate a quality score based on the generated article structure.
+ */
+function calculateQualityScore(article: any): number {
+    let score = 70; // Base score
+
+    // 1. Snippet Summary Length (ideal: 100-300 chars)
+    if (article.snippetSummary && article.snippetSummary.length >= 100 && article.snippetSummary.length <= 350) {
+        score += 5;
+    }
+
+    // 2. Number of FAQs (ideal: 5-7)
+    if (article.faqs && Array.isArray(article.faqs)) {
+        if (article.faqs.length >= 5) score += 5;
+        if (article.faqs.length >= 6) score += 2; // Bonus for 6+
+    }
+
+    // 3. Meta Title Length (ideal: <= 60 chars)
+    if (article.metaTitle && article.metaTitle.length <= 60) {
+        score += 3;
+    }
+
+    // 4. Meta Description Length (ideal: 120-160 chars)
+    if (article.metaDescription && article.metaDescription.length >= 100 && article.metaDescription.length <= 160) {
+        score += 3;
+    }
+
+    // 5. Structure Presence
+    if (article.sections && article.sections.length >= 3) score += 5;
+    if (article.internalLinkAnchors && article.internalLinkAnchors.length >= 2) score += 2;
+    if (article.primarySymbol) score += 5;
+
+    // Cap at 100
+    return Math.min(score, 100);
+}
+
 export async function POST(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -168,64 +204,98 @@ export async function POST(
 
         if (OPENROUTER_API_KEY) {
             const systemPrompt = `
-أنت خبير في تفسير الأحلام (مستند إلى ابن سيرين والنابلسي) ومحرر محتوى SEO محترف.
-مهمتك: تحويل تفسير الحلم الخام إلى "مقال شامل" عالي الجودة لمحركات البحث ومفيد للقارئ.
+أنت خبير تفسير أحلام ومحرر SEO عربي محترف لموقع "المفسر".
+مهمتك: تحويل "نص الحلم" + "سياق الرائي" إلى مقال SEO مفيد وطبيعي، بدون بصمة AI واضحة.
 
-🚫 القواعد الصارمة:
-1. التزم بهيكل JSON المطلوب حرفياً.
-2. استخدم لغة عربية فصيحة، سلسة، وغير آلية (تجنب التكرار الممل).
-3. "Anti-Pattern": لا تجعل كل المقالات تبدو بنفس الصيغة الجامدة. نوّع في العبارات.
+ممنوعات صارمة:
+- ممنوع عناوين طويلة أو محشوة أو تكرار كلمات.
+- ممنوع اختلاق اقتباسات من ابن سيرين/النابلسي أو نسب كلام حرفي لهم.
+- ممنوع تكرار قوالب ثابتة (نفس افتتاحية/نفس جمل) عبر المقالات.
+- ممنوع حشو "في المنام" أو "يدل على" في كل سطر.
 
-📋 هيكل المحتوى المطلوب (The Template):
+قواعد الجودة:
+- ركّز على "رمز رئيسي واحد" + 2–4 رموز ثانوية فقط.
+- اكتب فقرات قصيرة + نقاط bullets.
+- ابدأ بخلاصة سريعة قابلة للظهور كـ Featured Snippet.
+- اجعل التفسير مشروطًا بتفاصيل الحلم (القبول/الرفض/الخوف/الشخص/المكان/النتيجة).
 
-1️⃣ العنوان (title):
-"تفسير حلم [الرمز الرئيسي] في المنام ورؤية [رمز آخر] للمتزوجة والعزباء" (اجعله جذاباً وشاملاً).
+المدخلات التي ستصلك:
+- نص الحلم الخام (قد يحتوي معلومات حساسة تم تنظيفها مسبقًا)
+- الحالة الاجتماعية (إن ذُكرت): عزباء/متزوجة/حامل/مطلقة/رجل/غير محدد
+- مشاعر الرائي إن توفرت (خوف/فرح/قلق…)
 
-2️⃣ مقدمة السيو (seoIntro):
-فقرة سياقية (40-60 كلمة) تكتب قبل سرد الحلم.
-- ادخل في الموضوع مباشرة: "تعد رؤية... من الرؤى التي..."
-- اذكر أهمية الرمز وعلاقته بالواقع الاجتماعي والنفسي.
-- لا تذكر "رأى الحالم كذا" هنا، بل تحدث عن الرمز بشكل عام.
+المخرجات المطلوبة (JSON فقط، بنفس الهيكل حرفيًا):
 
-3️⃣ نص الحلم (dream_text):
-أعد صياغة الحلم بأسلوب سردي قصصي مشوق ومنقح من الأخطاء، بضمير الغائب ("رأت، ذهبت...").
-
-4️⃣ التفسير المهيكل (Structured Interpretation):
-- **الخلاصة (summary)**: سطرين يعطيان المعنى العام المباشر.
-- **تفكيك الرموز (symbols)**: مصفوفة تشرح كل رمز على حدة (الرمز ومعناه).
-- **تنويع الحالات (variations)**: كيف يختلف التفسير للعزباء، المتزوجة، الحامل، الرجل (بناءً على سياق الحلم أو بشكل عام للرمز).
-- **الجانب النفسي (psychological)**: تحليل نفسي للمشاعر والدوافع.
-- **خاتمة (conclusion)**: نصيحة أو توجيه ختامي قصير.
-
-5️⃣ الأسئلة الشائعة (FAQ):
-3-4 أسئلة يبحث عنها الناس حول هذا الرمز مع إجابات دقيقة.
-
-🔹 المخرجات المطلوبة (JSON حصراً):
 {
   "decision": "Publish" | "Archive",
-  "reason": "...",
+  "reason": "سبب مختصر إن كان Archive أو ملاحظة جودة",
   "article_data": {
-    "title": "...",
-    "seoIntro": "تعتبر رؤية ... من الرموز التي تشير إلى ...",
-    "dream_text": "...",
-    "interpretation": {
-      "summary": "...",
-      "symbols": [
-          {"name": "...", "meaning": "..."}
-      ],
-      "variations": [
-          {"status": "للعزباء", "meaning": "..."},
-          {"status": "للمتزوجة", "meaning": "..."}
-      ],
-      "psychological": "...",
-      "conclusion": "..."
-    },
-    "faqs": [
-       {"question": "...", "answer": "..."}
+    "primarySymbol": "الرمز الرئيسي المستخرج",
+    "secondarySymbols": ["...", "..."],
+    "metaTitle": "عنوان جوجل <= 58 حرف، يتضمن الرمز الرئيسي والحالة إن وجدت",
+    "metaDescription": "وصف <= 155 حرف يشرح المعنى + عامل يغيّر التفسير",
+    "h1": "عنوان الصفحة واضح ومباشر",
+    "seoIntro": "مقدمة قصيرة 45–70 كلمة بدون سرد الحلم",
+    "snippetSummary": "2–3 أسطر مباشرة: هل بشارة/تنبيه + ما الذي يغيّر المعنى",
+    "dream_text": "إعادة صياغة الحلم بأسلوب قصصي مختصر بضمير الغائب، 90–160 كلمة",
+    "sections": [
+      {
+        "heading": "معنى الحلم بشكل عام",
+        "content": "شرح عام مركز دون حشو"
+      },
+      {
+        "heading": "التفسير حسب تفاصيل الحلم",
+        "subsections": [
+          { "heading": "إذا كان الشعور خوفًا/قلقًا", "content": "..." },
+          { "heading": "إذا حدث قبول/نجاح/تيسير", "content": "..." },
+          { "heading": "إذا حدث رفض/تعطّل/عراقيل", "content": "..." },
+          { "heading": "وجود شخص/مكان واضح في الحلم", "content": "..." }
+        ]
+      },
+      {
+        "heading": "التفسير حسب الحالة الاجتماعية",
+        "content": "فقرة قصيرة مخصصة للحالة المذكورة، وإن لم تُذكر قدم تفسيرًا عامًا بلا افتراضات."
+      },
+      {
+        "heading": "الدلالة النفسية للحلم",
+        "content": "تحليل نفسي مرتبط بمشاعر الحلم: ضغط/طموح/ذنب/حاجة للأمان…"
+      },
+      {
+        "heading": "متى يكون الحلم بشارة؟",
+        "bullets": ["...", "...", "..."]
+      },
+      {
+        "heading": "متى يكون الحلم تنبيهًا؟",
+        "bullets": ["...", "...", "..."]
+      },
+      {
+        "heading": "ماذا تفعل بعد هذا الحلم؟",
+        "bullets": ["نصيحة عملية 1", "نصيحة 2", "نصيحة 3"]
+      }
     ],
-    "keywords": ["..."]
+    "faqs": [
+      { "question": "سؤال شائع مرتبط بالحلم", "answer": "جواب 2–4 أسطر" }
+    ],
+    "internalLinkAnchors": [
+      "تفسير حلم ...",
+      "تفسير حلم ..."
+    ],
+    "keywords": ["كلمة رئيسية", "تنويعات طبيعية 5–10"],
+    "safetyNote": "تنبيه قصير: التفسير اجتهاد ورمزي ولا يبنى عليه قرار مصيري."
   }
 }
+
+معيار القرار:
+- Publish إذا كان الحلم مفهومًا ويوجد رمز رئيسي واضح ويمكن إنتاج مقال مفيد.
+- Archive إذا كان النص فارغًا/غير مفهوم/سبام/قصير جدًا (< 15 كلمة) أو يحتوي فقط على حروف.
+
+تحقق قبل الإخراج:
+- metaTitle <= 58 حرف
+- metaDescription <= 155 حرف
+- لا تكرار "تفسير حلم" في العنوان
+- لا اختلاق مصادر
+- أسئلة FAQ بين 5 و7 (يفضل 6)
+- النص طبيعي ومتنوّع
 `;
 
             try {
@@ -241,7 +311,17 @@ export async function POST(
                         model: "openai/gpt-4o-mini",
                         messages: [
                             { role: "system", content: systemPrompt },
-                            { role: "user", content: `نص الحلم: ${dream.content}\n\nالتفسير الأولي: ${dream.interpretation?.summary || ''}\n\nسياق الرائي: ${dream.socialStatus || 'غير محدد'}` }
+                            {
+                                role: "user",
+                                content: `
+نص الحلم: ${dream.content}
+
+الحالة الاجتماعية (إن وُجدت): ${dream.socialStatus || "غير محدد"}
+المشاعر الظاهرة: ${dream.mood || "غير مذكور"}
+
+ملاحظات/سياق إضافي (اختياري): ${dream.isRecurring ? 'الحلم متكرر' : 'لا يوجد'}
+`
+                            }
                         ],
                         response_format: { type: "json_object" }
                     })
@@ -264,41 +344,47 @@ export async function POST(
 
                         if (result.decision === 'Publish') {
                             const article = result.article_data;
+                            const calculatedQualityScore = calculateQualityScore(article);
 
-                            const symbolsList = article.interpretation.symbols
-                                .map((s: any) => `- **${s.name}:** ${s.meaning}`)
-                                .join('\n');
+                            // Format internal interpretation for fallback/legacy views if needed
+                            // But primarily we will use the structured data
+                            const legacySymbolsList = article.secondarySymbols && Array.isArray(article.secondarySymbols)
+                                ? article.secondarySymbols.map((s: string) => `- ${s}`).join('\n')
+                                : '';
 
-                            const formattedInterpretation = `
+                            const formattedLegacyInterpretation = `
 **الخلاصة:**
-${article.interpretation.summary}
+${article.snippetSummary}
 
-**تفكيك الرموز:**
-${symbolsList}
+**معنى الحلم:**
+${article.sections && article.sections[0] ? article.sections[0].content : ''}
 
-**الدلالة النفسية:**
-${article.interpretation.psychological}
-
-**همسة ختامية:**
-${article.interpretation.conclusion}
+**الرموز:**
+- ${article.primarySymbol}
+${legacySymbolsList}
                             `.trim();
 
                             dream.publicVersion = {
-                                title: article.title || dream.title,
+                                title: article.h1 || article.metaTitle || dream.title,
                                 content: article.dream_text,
                                 seoIntro: article.seoIntro,
-                                interpretation: formattedInterpretation,
-                                structuredInterpretation: {
-                                    summary: article.interpretation.summary,
-                                    symbols: article.interpretation.symbols,
-                                    variations: article.interpretation.variations,
-                                    psychological: article.interpretation.psychological,
-                                    conclusion: article.interpretation.conclusion
+                                // Store the new comprehensive structure
+                                comprehensiveInterpretation: {
+                                    primarySymbol: article.primarySymbol,
+                                    secondarySymbols: article.secondarySymbols,
+                                    snippetSummary: article.snippetSummary,
+                                    metaTitle: article.metaTitle,
+                                    metaDescription: article.metaDescription,
+                                    sections: article.sections,
+                                    internalLinkAnchors: article.internalLinkAnchors,
+                                    safetyNote: article.safetyNote
                                 },
+                                // Keep legacy fields for backward compat or just in case
+                                interpretation: formattedLegacyInterpretation,
                                 faqs: article.faqs,
                                 isAnonymous: true,
                                 publishedAt: new Date(),
-                                qualityScore: 92
+                                qualityScore: calculatedQualityScore
                             };
                             dream.isPublic = true;
                             dream.visibilityStatus = 'public';
@@ -308,7 +394,7 @@ ${article.interpretation.conclusion}
                             // Only generate if dream doesn't already have a seoSlug
                             if (!dream.seoSlug) {
                                 const dreamId = dream._id.toString();
-                                const slugTitle = article.title || dream.title || dream.content?.slice(0, 100) || '';
+                                const slugTitle = article.metaTitle || article.title || dream.content?.slice(0, 100) || '';
                                 dream.seoSlug = await generateUniqueSlug(slugTitle, dream.tags, dreamId);
                                 console.log(`[Publish] Generated seoSlug: "${dream.seoSlug}" for dream ${dreamId}`);
                             }
@@ -332,7 +418,8 @@ ${article.interpretation.conclusion}
             content: dream.content,
             interpretation: dream.interpretation?.summary || 'تفسير عام',
             isAnonymous: true,
-            publishedAt: new Date()
+            publishedAt: new Date(),
+            qualityScore: 60 // Base score for fallback
         };
         dream.isPublic = true;
         dream.visibilityStatus = 'public';
