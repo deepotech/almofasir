@@ -663,7 +663,8 @@ ${legacySymbolsList}
                     `.trim();
 
                     dream.publicVersion = {
-                        title: article.h1 || article.metaTitle || dream.title,
+                        // Also update top-level publicVersion fields for easier access/fallback
+                        title: article.h1 || article.metaTitle || dream.title, // H1 is priority for display title
                         content: article.dream_text,
                         seoIntro: article.seoIntro,
                         // Store the new comprehensive structure

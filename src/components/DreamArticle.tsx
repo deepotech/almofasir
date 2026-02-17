@@ -103,6 +103,22 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
                 </section>
             )}
 
+            {/* ── Dream Narrative (collapsible) - Moved Up for SEO ── */}
+            {pv?.content && (
+                <div className="mb-10 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/20 overflow-hidden">
+                    <details className="group">
+                        <summary className="cursor-pointer p-4 text-base font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-2 select-none">
+                            <span>📜</span>
+                            <span>اضغط هنا لقراءة نص الحلم الأصلي</span>
+                            <span className="mr-auto transition-transform group-open:rotate-180">▼</span>
+                        </summary>
+                        <div className="px-6 pb-6 pt-2 text-lg leading-loose text-[var(--color-text-secondary)] whitespace-pre-line border-t border-[var(--color-border)]/50">
+                            {pv.content}
+                        </div>
+                    </details>
+                </div>
+            )}
+
             {/* ── Symbols (Primary + Secondary) ── */}
             {primarySymbol && (
                 <div className="mb-8 flex items-center gap-3 flex-wrap">
@@ -168,20 +184,6 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
                         </div>
                     </section>
                 ) : null
-            )}
-
-            {/* ── Dream Narrative (collapsible) ── */}
-            {pv?.content && (
-                <div className="mb-12 rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]/20 overflow-hidden">
-                    <details>
-                        <summary className="cursor-pointer p-5 text-lg font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-2 select-none">
-                            <span>📜</span> عرض نص الحلم الأصلي (إعادة صياغة)
-                        </summary>
-                        <div className="px-6 pb-6 pt-2 text-lg leading-loose text-[var(--color-text-secondary)] whitespace-pre-line border-t border-[var(--color-border)]/50">
-                            {pv.content}
-                        </div>
-                    </details>
-                </div>
             )}
 
             {/* ── FAQ ── */}
