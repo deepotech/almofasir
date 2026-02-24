@@ -67,7 +67,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ar" dir="rtl" className={cairo.variable} suppressHydrationWarning>
-      <body suppressHydrationWarning>
+      <body className="flex flex-col items-center w-full min-h-screen overflow-x-hidden" suppressHydrationWarning>
         <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""} />
         <Script
           async
@@ -78,7 +78,9 @@ export default function RootLayout({
         <HomePageJsonLd />
         <StarBackground />
         <AuthProvider>
-          {children}
+          <div className="w-full flex flex-col items-center">
+            {children}
+          </div>
         </AuthProvider>
       </body>
     </html>

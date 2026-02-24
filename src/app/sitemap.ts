@@ -125,11 +125,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     // Dynamic Dream Pages (Fetch from DB)
     // URL pattern: /{seoSlug} (matches [dreamSlug] route)
-    // Strategy A: seoSlug is the single canonical field for ALL dreams (old + new).
+    // Strategy A: seoSlug is the single canonical slug field for ALL dreams.
     let dreamPages: MetadataRoute.Sitemap = [];
     try {
         await dbConnect();
         const dreams = await Dream.find({
+            isPublic: true,
             visibilityStatus: 'public',
             seoSlug: { $exists: true, $nin: [null, ''] }
         })
