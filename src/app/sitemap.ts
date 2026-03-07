@@ -97,6 +97,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             changeFrequency: 'weekly',
             priority: 0.8,
         },
+        // Articles List Page
+        {
+            url: `${BASE_URL}/learn/articles`,
+            lastModified: currentDate,
+            changeFrequency: 'weekly',
+            priority: 0.8,
+        },
+        // Car Dream specific article
+        {
+            url: `${BASE_URL}/learn/articles/car-dream-interpretation`,
+            lastModified: currentDate,
+            changeFrequency: 'monthly',
+            priority: 0.8,
+        },
         // Authority Pillar Page
         {
             url: `${BASE_URL}/tafsir-al-ahlam`,
