@@ -104,9 +104,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             changeFrequency: 'weekly',
             priority: 0.8,
         },
-        // Car Dream specific article
+        // Articles
         {
             url: `${BASE_URL}/learn/articles/car-dream-interpretation`,
+            lastModified: currentDate,
+            changeFrequency: 'monthly',
+            priority: 0.8,
+        },
+        {
+            url: `${BASE_URL}/learn/articles/hugging-dead-dream-interpretation`,
             lastModified: currentDate,
             changeFrequency: 'monthly',
             priority: 0.8,
@@ -117,6 +123,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             lastModified: currentDate,
             changeFrequency: 'weekly',
             priority: 0.9,
+        },
+        // Booking & CTA pages
+        {
+            url: `${BASE_URL}/booking`,
+            lastModified: currentDate,
+            changeFrequency: 'monthly',
+            priority: 0.6,
+        },
+        {
+            url: `${BASE_URL}/consult-expert`,
+            lastModified: currentDate,
+            changeFrequency: 'monthly',
+            priority: 0.7,
+        },
+        {
+            url: `${BASE_URL}/join`,
+            lastModified: currentDate,
+            changeFrequency: 'monthly',
+            priority: 0.6,
         },
     ];
 
