@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
         rules: {
             userAgent: '*',
             allow: '/',
-            disallow: ['/admin/', '/dashboard/', '/api/'], // Protect sensitive areas
+            disallow: ['/_next/', '/admin/', '/dashboard/', '/api/'], // Protect system and sensitive areas
         },
         sitemap: 'https://almofasir.com/sitemap.xml',
     };
