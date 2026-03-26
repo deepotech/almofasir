@@ -1,6 +1,11 @@
 /**
  * SEO Helpers - JSON-LD Schema Generation
+ * Domain: https://almofasir.com (canonical)
  */
+
+const SITE_URL = 'https://almofasir.com';
+const SITE_NAME = 'المُفسِّر';
+const LOGO_URL = `${SITE_URL}/logo.png`;
 
 export interface ArticleSchemaData {
     title: string;
@@ -26,16 +31,16 @@ export function generateArticleSchema(data: ArticleSchemaData): object {
         "dateModified": data.dateModified || data.datePublished,
         "author": {
             "@type": "Organization",
-            "name": "المفسّر",
-            "url": "https://almofasser.com"
+            "name": SITE_NAME,
+            "url": SITE_URL
         },
         "publisher": {
             "@type": "Organization",
-            "name": "المفسّر - منصة تفسير الأحلام",
-            "url": "https://almofasser.com",
+            "name": `${SITE_NAME} - منصة تفسير الأحلام`,
+            "url": SITE_URL,
             "logo": {
                 "@type": "ImageObject",
-                "url": "https://almofasser.com/logo.png"
+                "url": LOGO_URL
             }
         },
         "mainEntityOfPage": {
@@ -110,4 +115,49 @@ export function generateDreamListSchema(
             "description": dream.description
         }))
     };
+}
+
+/**
+ * Generate Organization + WebSite schemas for the homepage
+ */
+export function generateHomepageSchemas(): object[] {
+    return [
+        {
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "name": SITE_NAME,
+            "alternateName": "Almofasir",
+            "url": SITE_URL,
+            "logo": LOGO_URL,
+            "description": "منصة المفسر لتفسير الأحلام بالذكاء الاصطناعي وفق منهج ابن سيرين والنابلسي",
+            "sameAs": [
+                "https://twitter.com/almofasir",
+                "https://facebook.com/almofasir"
+            ]
+        },
+        {
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": `${SITE_NAME} - تفسير الأحلام`,
+            "url": SITE_URL,
+            "inLanguage": "ar",
+            "description": "موقع تفسير الأحلام مجاناً بالذكاء الاصطناعي وفق منهج ابن سيرين والنابلسي",
+            "potentialAction": {
+                "@type": "SearchAction",
+                "target": {
+                    "@type": "EntryPoint",
+                    "urlTemplate": `${SITE_URL}/symbols?q={search_term_string}`
+                },
+                "query-input": "required name=search_term_string"
+            },
+            "publisher": {
+                "@type": "Organization",
+                "name": SITE_NAME,
+                "logo": {
+                    "@type": "ImageObject",
+                    "url": LOGO_URL
+                }
+            }
+        }
+    ];
 }

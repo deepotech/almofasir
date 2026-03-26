@@ -11,12 +11,10 @@ import DreamArticle from '@/components/DreamArticle';
 
 export const dynamic = 'force-dynamic';
 
+const BASE_URL = 'https://almofasir.com';
+
 /**
  * Strategy A: Lookup by seoSlug (single source of truth for URL).
- * - Old dreams have their original seoSlug (kept as-is).
- * - New dreams get a clean slugifyArabic-generated seoSlug at publish time.
- * - No redirects, no previousSlugs lookups.
- * - Fallback: lookup by MongoDB _id for backward compatibility.
  */
 async function getDream(slugOrId: string) {
     await dbConnect();
@@ -44,40 +42,80 @@ async function getDream(slugOrId: string) {
 }
 
 /**
- * Fetch related/recent public dreams (excluding the current one).
+ * Fetch related dreams — smart matching by primarySymbol → secondarySymbols → tags → recency.
  */
-async function getRelatedDreams(currentId: string, tags: string[] = [], limit = 4) {
+async function getRelatedDreams(
+    currentId: string,
+    primarySymbol?: string | null,
+    secondarySymbols: string[] = [],
+    tags: string[] = [],
+    limit = 4
+) {
     await dbConnect();
 
-    // Try to find dreams with matching tags first
-    let related = await Dream.find({
+    const baseQuery = {
         _id: { $ne: currentId },
         visibilityStatus: 'public',
         'publicVersion.content': { $exists: true },
-        ...(tags.length > 0 ? { tags: { $in: tags } } : {})
-    })
-        .sort({ 'publicVersion.publishedAt': -1 })
-        .limit(limit)
-        .select('publicVersion.title publicVersion.content seoSlug tags')
-        .lean();
+    };
 
-    // Fallback to recent dreams if no tag matches
-    if (related.length === 0 && tags.length > 0) {
-        related = await Dream.find({
-            _id: { $ne: currentId },
-            visibilityStatus: 'public',
-            'publicVersion.content': { $exists: true }
+    const selectFields = 'publicVersion.title publicVersion.content seoSlug tags publicVersion.comprehensiveInterpretation.primarySymbol';
+
+    // Priority 1: Match by primarySymbol
+    if (primarySymbol) {
+        const bySymbol = await Dream.find({
+            ...baseQuery,
+            'publicVersion.comprehensiveInterpretation.primarySymbol': primarySymbol
         })
             .sort({ 'publicVersion.publishedAt': -1 })
             .limit(limit)
-            .select('publicVersion.title publicVersion.content seoSlug tags')
+            .select(selectFields)
             .lean();
+
+        if (bySymbol.length >= 2) {
+            return bySymbol.map((d: any) => ({
+                title: d.publicVersion?.title || 'حلم مفسر',
+                slug: d.seoSlug || d._id.toString(),
+                content: d.publicVersion?.content?.slice(0, 120) || '',
+                primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
+            }));
+        }
     }
 
-    return related.map((d: any) => ({
+    // Priority 2: Match by secondarySymbols or tags
+    const symbolsAndTags = [...secondarySymbols, ...tags].filter(Boolean);
+    if (symbolsAndTags.length > 0) {
+        const byTags = await Dream.find({
+            ...baseQuery,
+            tags: { $in: symbolsAndTags }
+        })
+            .sort({ 'publicVersion.publishedAt': -1 })
+            .limit(limit)
+            .select(selectFields)
+            .lean();
+
+        if (byTags.length >= 2) {
+            return byTags.map((d: any) => ({
+                title: d.publicVersion?.title || 'حلم مفسر',
+                slug: d.seoSlug || d._id.toString(),
+                content: d.publicVersion?.content?.slice(0, 120) || '',
+                primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
+            }));
+        }
+    }
+
+    // Fallback: most recent public dreams
+    const recent = await Dream.find(baseQuery)
+        .sort({ 'publicVersion.publishedAt': -1 })
+        .limit(limit)
+        .select(selectFields)
+        .lean();
+
+    return recent.map((d: any) => ({
         title: d.publicVersion?.title || 'حلم مفسر',
         slug: d.seoSlug || d._id.toString(),
-        content: d.publicVersion?.content?.slice(0, 120) || ''
+        content: d.publicVersion?.content?.slice(0, 120) || '',
+        primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
     }));
 }
 
@@ -88,27 +126,36 @@ export async function generateMetadata({ params }: { params: Promise<{ dreamSlug
     if (!dream) {
         return {
             title: 'الحلم غير موجود - المفسّر',
-            description: 'عذراً، لم يتم العثور على هذا الحلم.'
+            description: 'عذراً، لم يتم العثور على هذا الحلم.',
+            robots: { index: false, follow: false },
         };
     }
 
-    // Prefer AI-generated meta from comprehensiveInterpretation
     const comprehensive = (dream as any).publicVersion?.comprehensiveInterpretation;
     const seoTitle = comprehensive?.metaTitle
         || generateSeoTitle(dream.publicVersion?.title, dream.tags, dream.publicVersion?.content || '');
     const metaDescription = comprehensive?.metaDescription
         || generateMetaDescription(dream.publicVersion?.interpretation || '', dream.tags);
 
-    // Use seoSlug as the canonical slug (single source of truth)
     const slug = dream.seoSlug || dream._id.toString();
-    const canonicalUrl = `https://almofasir.com/${slug}`;
+    const canonicalUrl = `${BASE_URL}/${slug}`;
 
     return {
         title: `${seoTitle} - المفسّر`,
         description: metaDescription,
         keywords: dream.tags?.join(', '),
+        robots: {
+            index: true,
+            follow: true,
+            googleBot: {
+                index: true,
+                follow: true,
+                'max-snippet': -1,
+                'max-image-preview': 'large',
+            },
+        },
         alternates: {
-            canonical: canonicalUrl
+            canonical: canonicalUrl,
         },
         openGraph: {
             title: seoTitle,
@@ -117,12 +164,19 @@ export async function generateMetadata({ params }: { params: Promise<{ dreamSlug
             siteName: 'المفسّر',
             locale: 'ar_SA',
             type: 'article',
+            publishedTime: (dream as any).publicVersion?.publishedAt
+                ? new Date((dream as any).publicVersion.publishedAt).toISOString()
+                : undefined,
+            modifiedTime: (dream as any).updatedAt
+                ? new Date((dream as any).updatedAt).toISOString()
+                : undefined,
+            tags: dream.tags,
         },
         twitter: {
             card: 'summary_large_image',
             title: seoTitle,
             description: metaDescription,
-        }
+        },
     };
 }
 
@@ -137,57 +191,65 @@ export default async function DreamDetailsPage({ params }: { params: Promise<{ d
     }
 
     const slug = dream.seoSlug || dream._id.toString();
-    const canonicalUrl = `https://almofasir.com/${slug}`;
+    const canonicalUrl = `${BASE_URL}/${slug}`;
 
-    // Prefer AI-generated meta
     const comprehensive = (dream as any).publicVersion?.comprehensiveInterpretation;
     const seoTitle = comprehensive?.metaTitle
         || generateSeoTitle(dream.publicVersion?.title, dream.tags, dream.publicVersion?.content || '');
     const metaDescription = comprehensive?.metaDescription
         || generateMetaDescription(dream.publicVersion?.interpretation || '', dream.tags);
 
+    const publishedAt = (dream as any).publicVersion?.publishedAt || (dream as any).createdAt;
+    const updatedAt = (dream as any).updatedAt || publishedAt;
+
     // JSON-LD: Article
     const jsonLd = generateArticleSchema({
         title: seoTitle,
         description: metaDescription,
         url: canonicalUrl,
-        datePublished: (dream.publicVersion?.publishedAt || dream.createdAt)?.toISOString(),
-        tags: dream.tags
+        datePublished: publishedAt ? new Date(publishedAt).toISOString() : new Date().toISOString(),
+        dateModified: updatedAt ? new Date(updatedAt).toISOString() : undefined,
+        tags: dream.tags,
     });
 
     // JSON-LD: Breadcrumbs
     const breadcrumbJsonLd = generateBreadcrumbSchema([
-        { name: 'الرئيسية', url: 'https://almofasir.com/' },
-        { name: 'أحلام مفسرة', url: 'https://almofasir.com/interpreted-dreams' },
-        { name: seoTitle, url: canonicalUrl }
+        { name: 'الرئيسية', url: `${BASE_URL}/` },
+        { name: 'أحلام مفسرة', url: `${BASE_URL}/interpreted-dreams` },
+        { name: seoTitle, url: canonicalUrl },
     ]);
 
     // JSON-LD: FAQ
-    const faqs = dream.publicVersion?.faqs;
+    const faqs = (dream as any).publicVersion?.faqs
+        ?? comprehensive?.faqs
+        ?? [];
     const faqJsonLd = faqs && faqs.length > 0
         ? generateFAQSchema(faqs.map((f: any) => ({ question: f.question, answer: f.answer })))
         : null;
 
-    // Fetch related dreams
-    const related = await getRelatedDreams(dream._id.toString(), dream.tags);
+    // Fetch related dreams using smart symbol matching
+    const primarySymbol = comprehensive?.primarySymbol ?? null;
+    const secondarySymbols = comprehensive?.secondarySymbols ?? [];
+    const related = await getRelatedDreams(
+        dream._id.toString(),
+        primarySymbol,
+        secondarySymbols,
+        dream.tags,
+    );
 
-    // Serialize the dream for the client component
+    // Serialize (plain objects only — no Mongoose documents)
     const serializedDream = JSON.parse(JSON.stringify(dream));
 
     return (
         <>
-            {jsonLd && (
-                <script
-                    type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-                />
-            )}
-            {breadcrumbJsonLd && (
-                <script
-                    type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
-                />
-            )}
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+            />
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+            />
             {faqJsonLd && (
                 <script
                     type="application/ld+json"
