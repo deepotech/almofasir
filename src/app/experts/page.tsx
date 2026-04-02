@@ -4,7 +4,11 @@ import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
-import { HumanInterpreter } from '@/data/human_interpreters';
+import { HumanInterpreter, humanInterpreters } from '@/data/human_interpreters';
+import { normalizeInterpreter } from '@/lib/dataHelpers';
+
+// ─── UI States ───────────────────────────────────────────────────────────────
+type PageState = 'loading' | 'error' | 'empty' | 'ready';
 
 export default function ExpertsPage() {
     const router = useRouter();
@@ -16,83 +20,93 @@ export default function ExpertsPage() {
 
     // State for interpreters data
     const [interpreters, setInterpreters] = useState<HumanInterpreter[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [pageState, setPageState] = useState<PageState>('loading');
+    const [errorMessage, setErrorMessage] = useState<string>('');
 
     // Fetch from API
     useEffect(() => {
         const fetchInterpreters = async () => {
+            setPageState('loading');
+            setErrorMessage('');
+
             try {
+                console.log('[EXPERTS PAGE] Fetching interpreters from API...');
+
                 const res = await fetch('/api/interpreters');
-                if (res.ok) {
-                    const data = await res.json();
 
-                    // Map API data to UI model
-                    const mapped = data.interpreters.map((i: any) => ({
-                        id: i.id,
-                        name: i.displayName,
-                        title: `مفسر ${i.interpretationTypeAr}`, // Derive title
-                        bio: i.bio,
-                        isVerified: true, // Default to true for DB users for now
-                        isExpert: i.completedDreams > 100, // Logic for expert badge
-                        rating: i.rating || 5, // Default rating if new
-                        reviewsCount: i.totalRatings || 0,
-                        completedDreams: i.completedDreams || 0,
-                        responseSpeed: i.responseTime <= 6 ? '6h' : i.responseTime <= 24 ? '24h' : '48h',
-                        price: i.price,
-                        currency: 'USD', // Fixed currency for now
-                        avatar: i.avatar || '👤',
-                        types: [i.interpretationType],
-                        status: i.isActive ? 'available' : 'busy'
-                    }));
-
-                    // Fallback to static if DB is empty (for demo purposes)
-                    if (mapped.length === 0) {
-                        // Only if strictly needed, but better to show empty state or handle effectively.
-                        // For now, let's stick to using the mapped data even if empty to prove the fix.
-                        // setInterpreters(humanInterpreters); 
-                        setInterpreters([]);
-                    } else {
-                        setInterpreters(mapped);
-                    }
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({}));
+                    console.error('[EXPERTS PAGE] API error:', res.status, errorData);
+                    throw new Error(`API returned ${res.status}: ${errorData?.error || res.statusText}`);
                 }
-            } catch (err) {
-                console.error('Failed to fetch interpreters', err);
-            } finally {
-                setLoading(false);
+
+                const data = await res.json();
+
+                console.log('[EXPERTS PAGE] API response:', {
+                    success: data.success,
+                    count: data.count,
+                    total: data.total,
+                    interpretersLength: data.interpreters?.length
+                });
+
+                const rawList = data.interpreters || [];
+
+                if (rawList.length === 0) {
+                    console.warn('[EXPERTS PAGE] API returned 0 interpreters — falling back to static data');
+                    // Fallback to static human interpreters if DB is empty
+                    setInterpreters(humanInterpreters);
+                    setPageState('ready');
+                    return;
+                }
+
+                // Map API data to UI model using normalizeInterpreter
+                const mapped = rawList.map((i: any) => normalizeInterpreter(i));
+
+                console.log(`[EXPERTS PAGE] Mapped ${mapped.length} interpreters successfully`);
+                setInterpreters(mapped);
+                setPageState('ready');
+
+            } catch (err: any) {
+                console.error('[EXPERTS PAGE] Failed to fetch interpreters:', err);
+                setErrorMessage(err?.message || 'حدث خطأ غير متوقع');
+
+                // On error: fallback to static data so the page isn't completely empty
+                console.warn('[EXPERTS PAGE] Using static fallback data due to error');
+                setInterpreters(humanInterpreters);
+                setPageState('ready');
             }
         };
 
         fetchInterpreters();
     }, []);
 
-    // Filter Logic
+    // ─── Filter Logic ──────────────────────────────────────────────────────
     const filteredInterpreters = useMemo(() => {
         return interpreters.filter((interpreter) => {
             // 1. Search (Name or Title)
             if (searchQuery) {
                 const query = searchQuery.toLowerCase();
-                if (
-                    !interpreter.name.toLowerCase().includes(query) &&
-                    !interpreter.title.toLowerCase().includes(query)
-                ) {
-                    return false;
-                }
+                const nameMatch = interpreter.name?.toLowerCase().includes(query);
+                const titleMatch = interpreter.title?.toLowerCase().includes(query);
+                const bioMatch = interpreter.bio?.toLowerCase().includes(query);
+                if (!nameMatch && !titleMatch && !bioMatch) return false;
             }
 
             // 2. Type
             if (selectedType !== 'all') {
-                if (!interpreter.types.includes(selectedType as any)) return false;
+                if (!interpreter.types?.includes(selectedType as any)) return false;
             }
 
-            // 3. Price
+            // 3. Price — FIXED: labels now match the actual filter thresholds
             if (priceRange !== 'all') {
-                if (priceRange === 'low' && interpreter.price >= 40) return false;
-                if (priceRange === 'medium' && (interpreter.price < 40 || interpreter.price > 60)) return false;
-                if (priceRange === 'high' && interpreter.price <= 60) return false;
+                const price = interpreter.price ?? 0;
+                if (priceRange === 'low' && price >= 30) return false;       // أقل من 30$
+                if (priceRange === 'medium' && (price < 30 || price > 70)) return false;  // 30$-70$
+                if (priceRange === 'high' && price <= 70) return false;      // أكثر من 70$
             }
 
             // 4. Rating
-            if (minRating && interpreter.rating < 4) return false;
+            if (minRating && (interpreter.rating ?? 0) < 4) return false;
 
             // 5. Speed
             if (speedFilter !== 'all') {
@@ -104,12 +118,13 @@ export default function ExpertsPage() {
             // Smart Sorting
             .sort((a, b) => {
                 if (a.isVerified !== b.isVerified) return a.isVerified ? -1 : 1;
-                if (b.rating !== a.rating) return b.rating - a.rating; // Rating Desc
+                if ((b.rating ?? 0) !== (a.rating ?? 0)) return (b.rating ?? 0) - (a.rating ?? 0);
 
                 const speedVal = (s: string) => s === '6h' ? 1 : s === '24h' ? 2 : 3;
-                if (speedVal(a.responseSpeed) !== speedVal(b.responseSpeed)) return speedVal(a.responseSpeed) - speedVal(b.responseSpeed);
+                if (speedVal(a.responseSpeed) !== speedVal(b.responseSpeed))
+                    return speedVal(a.responseSpeed) - speedVal(b.responseSpeed);
 
-                return a.price - b.price; // Price Asc
+                return (a.price ?? 0) - (b.price ?? 0);
             });
     }, [interpreters, searchQuery, selectedType, priceRange, minRating, speedFilter]);
 
@@ -117,9 +132,20 @@ export default function ExpertsPage() {
         if (typeof window !== 'undefined') {
             localStorage.setItem('selected_human_interpreter', id);
         }
-        // Redirect to booking page
         router.push(`/booking?interpreter=${id}`);
     };
+
+    const handleClearFilters = () => {
+        setSearchQuery('');
+        setSelectedType('all');
+        setPriceRange('all');
+        setSpeedFilter('all');
+        setMinRating(false);
+    };
+
+    // ─── Derived state ────────────────────────────────────────────────────
+    const hasActiveFilters = searchQuery !== '' || selectedType !== 'all' || priceRange !== 'all' || speedFilter !== 'all' || minRating;
+    const isLoading = pageState === 'loading';
 
     return (
         <>
@@ -131,9 +157,7 @@ export default function ExpertsPage() {
 
                 {/* 1. Hero Section */}
                 <section className="relative pt-12 pb-12 text-center px-4 overflow-hidden">
-                    {/* Background Glow */}
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[600px] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[var(--color-primary)]/10 via-transparent to-transparent pointer-events-none z-0" />
-
                     <div className="relative z-10 container mx-auto">
                         <div className="inline-block p-1 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)] mb-6 animate-fadeIn">
                             <span className="block bg-black/80 backdrop-blur-md px-4 py-1 rounded-full text-xs font-bold text-white uppercase tracking-widest">
@@ -150,12 +174,10 @@ export default function ExpertsPage() {
                 </section>
 
                 {/* 2. Filters Bar */}
-                {/* changed bg to solid hex to prevent transparency overlap */}
                 <div className="sticky top-[70px] z-30 px-4 mb-20 transition-all duration-300 pointer-events-none">
                     <div className="container mx-auto max-w-5xl pointer-events-auto">
                         <div className="bg-[#0f172a] border border-white/20 shadow-2xl rounded-3xl p-4 md:p-6 transition-all">
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-
                                 {/* Search */}
                                 <div className="md:col-span-4 relative group">
                                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 group-hover:text-[var(--color-primary)] transition-colors text-lg">🔍</span>
@@ -170,7 +192,6 @@ export default function ExpertsPage() {
 
                                 {/* Filters Group */}
                                 <div className="md:col-span-8 flex flex-wrap gap-3 items-center justify-end">
-
                                     {/* Type Filter */}
                                     <select
                                         value={selectedType}
@@ -181,9 +202,11 @@ export default function ExpertsPage() {
                                         <option value="all">📚 كل التخصصات</option>
                                         <option value="religious">شرعي</option>
                                         <option value="psychological">نفسي</option>
+                                        <option value="symbolic">رمزي</option>
+                                        <option value="mixed">شامل</option>
                                     </select>
 
-                                    {/* Price Filter */}
+                                    {/* Price Filter — FIXED labels match filter thresholds */}
                                     <select
                                         value={priceRange}
                                         onChange={(e) => setPriceRange(e.target.value)}
@@ -216,11 +239,21 @@ export default function ExpertsPage() {
 
                 {/* 3. Interpreters List */}
                 <section className="container mx-auto px-4 min-h-[400px]">
-                    {filteredInterpreters.length > 0 ? (
+
+                    {/* Loading Skeleton */}
+                    {isLoading && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {[1, 2, 3, 4, 5, 6].map(i => (
+                                <div key={i} className="bg-white/5 rounded-3xl h-80 animate-pulse border border-white/5" />
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Data ready, has results */}
+                    {!isLoading && filteredInterpreters.length > 0 && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                             {filteredInterpreters.map((interpreter, index) => {
-                                // Logic for Badges
-                                const isTopRated = interpreter.rating >= 4.8;
+                                const isTopRated = (interpreter.rating ?? 0) >= 4.8;
                                 const isSwiftReply = interpreter.responseSpeed === '6h';
                                 const isRecommended = index === 0 && !searchQuery && selectedType === 'all';
 
@@ -229,10 +262,10 @@ export default function ExpertsPage() {
                                         key={interpreter.id}
                                         className={`group relative bg-[var(--color-bg-card)] border rounded-2xl sm:rounded-3xl overflow-hidden hover:shadow-[0_20px_40px_-15px_rgba(var(--color-primary-rgb),0.3)] transition-all duration-300 flex flex-col hover:-translate-y-2 ${isRecommended ? 'border-[var(--color-secondary)] shadow-[0_0_30px_-5px_rgba(245,158,11,0.15)] ring-1 ring-[var(--color-secondary)]/30' : 'border-white/10 hover:border-[var(--color-primary)]/50'}`}
                                     >
-                                        {/* Highlight Effect for All Cards */}
+                                        {/* Highlight Effect */}
                                         <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
-                                        {/* Badges Container */}
+                                        {/* Badges */}
                                         <div className="absolute top-3 sm:top-4 left-3 sm:left-4 z-20 flex gap-1 sm:gap-2">
                                             {isRecommended && (
                                                 <div className="bg-gradient-to-r from-[var(--color-secondary)] to-yellow-600 text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shadow-lg flex items-center gap-1">
@@ -253,44 +286,43 @@ export default function ExpertsPage() {
 
                                         {/* Card Header */}
                                         <div className="p-4 sm:p-6 md:p-8 pb-2 sm:pb-4 flex items-center gap-3 sm:gap-4 md:gap-6 relative z-10">
-                                            {/* Avatar with Status Dot */}
+                                            {/* Avatar */}
                                             <div className="relative flex-shrink-0">
                                                 <div className="w-14 h-14 sm:w-16 md:w-20 sm:h-16 md:h-20 rounded-xl sm:rounded-2xl bg-[var(--color-bg-tertiary)] border-2 border-white/10 group-hover:border-[var(--color-primary)]/50 transition-colors flex items-center justify-center text-2xl sm:text-3xl md:text-4xl overflow-hidden shadow-2xl">
-                                                    {interpreter.avatar.startsWith('/') || interpreter.avatar.startsWith('http') || interpreter.avatar.startsWith('data:') ? (
+                                                    {interpreter.avatar && (interpreter.avatar.startsWith('/') || interpreter.avatar.startsWith('http') || interpreter.avatar.startsWith('data:')) ? (
                                                         <img src={interpreter.avatar} alt={interpreter.name} className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500" />
                                                     ) : (
-                                                        <span className="transform group-hover:scale-110 transition-transform duration-300">{interpreter.avatar}</span>
+                                                        <span className="transform group-hover:scale-110 transition-transform duration-300">{interpreter.avatar || '👤'}</span>
                                                     )}
                                                 </div>
-                                                <div className={`absolute -bottom-1 -right-1 w-4 sm:w-5 h-4 sm:h-5 rounded-full border-2 sm:border-4 border-[var(--color-bg-card)] ${interpreter.status === 'busy' ? 'bg-red-500' : 'bg-green-500'}`} title={interpreter.status === 'busy' ? 'مشغول' : 'متاح'} />
+                                                <div className={`absolute -bottom-1 -right-1 w-4 sm:w-5 h-4 sm:h-5 rounded-full border-2 sm:border-4 border-[var(--color-bg-card)] ${interpreter.status === 'busy' ? 'bg-red-500' : interpreter.status === 'offline' ? 'bg-gray-500' : 'bg-green-500'}`} title={interpreter.status === 'busy' ? 'مشغول' : interpreter.status === 'offline' ? 'غير متاح' : 'متاح'} />
                                             </div>
 
                                             {/* Name & Title */}
                                             <div className="flex-1 min-w-0">
                                                 <h3 className="font-bold text-base sm:text-lg md:text-xl text-white group-hover:text-[var(--color-primary-light)] transition-colors flex items-center gap-1 sm:gap-2 mb-0.5 sm:mb-1 truncate">
-                                                    {interpreter.name}
+                                                    {interpreter.name || 'مفسر'}
                                                     {interpreter.isVerified && <span className="text-blue-400 text-xs sm:text-sm bg-blue-500/10 p-0.5 sm:p-1 rounded-full" title="موثق">✓</span>}
                                                 </h3>
-                                                <p className="text-xs sm:text-sm text-gray-400 font-medium truncate">{interpreter.title}</p>
-
+                                                <p className="text-xs sm:text-sm text-gray-400 font-medium truncate">{interpreter.title || 'مفسر أحلام'}</p>
                                                 <div className="flex items-center gap-1 mt-1.5 sm:mt-2 text-yellow-400 text-xs sm:text-sm font-bold bg-yellow-400/10 px-1.5 sm:px-2 py-0.5 rounded-lg w-fit">
-                                                    <span>★</span> {interpreter.rating}
-                                                    <span className="text-gray-500 font-normal text-[10px] sm:text-xs ml-1">({interpreter.reviewsCount})</span>
+                                                    <span>★</span> {interpreter.rating ?? 'جديد'}
+                                                    <span className="text-gray-500 font-normal text-[10px] sm:text-xs ml-1">({interpreter.reviewsCount ?? 0})</span>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* Bio - Hidden on mobile for cleaner look */}
+                                        {/* Bio */}
                                         <div className="hidden sm:block px-6 md:px-8 py-2 flex-grow relative z-10">
                                             <p className="text-sm text-gray-300 leading-relaxed line-clamp-2 h-[3em]">
-                                                {interpreter.bio}
+                                                {interpreter.bio || 'مفسر أحلام معتمد'}
                                             </p>
                                         </div>
 
-                                        {/* Info Grid (Stats) - Hidden on mobile */}
+                                        {/* Stats Grid */}
                                         <div className="hidden sm:grid px-6 md:px-8 py-4 md:py-5 grid-cols-2 gap-4 text-center border-t border-white/5 mt-4 md:mt-6 bg-black/20">
                                             <div>
-                                                <div className="text-white font-bold text-base md:text-lg mb-1">{interpreter.completedDreams}+</div>
+                                                <div className="text-white font-bold text-base md:text-lg mb-1">{interpreter.completedDreams ?? 0}+</div>
                                                 <div className="text-[10px] md:text-xs text-gray-500 font-medium uppercase tracking-wide">حلم مفسر</div>
                                             </div>
                                             <div className="border-r border-white/5">
@@ -301,18 +333,17 @@ export default function ExpertsPage() {
                                             </div>
                                         </div>
 
-                                        {/* Footer: Price & CTA */}
+                                        {/* Footer */}
                                         <div className="p-3 sm:p-4 md:p-6 bg-black/40 border-t border-white/5 flex flex-col gap-2 sm:gap-4 relative z-10 backdrop-blur-sm mt-auto">
                                             <div className="flex items-center justify-between gap-2">
                                                 <div className="flex flex-col">
                                                     <span className="text-[10px] sm:text-xs text-gray-400 mb-0.5 sm:mb-1">السعر</span>
                                                     <span className="text-lg sm:text-xl md:text-2xl font-black text-white">
-                                                        {interpreter.price} <span className="text-[10px] sm:text-xs font-medium text-gray-500">{interpreter.currency}</span>
+                                                        {interpreter.price ?? '—'} <span className="text-[10px] sm:text-xs font-medium text-gray-500">{interpreter.currency ?? '$'}</span>
                                                     </span>
                                                 </div>
-
                                                 <button
-                                                    onClick={() => handleSelectInterpreter(interpreter.id)}
+                                                    onClick={() => handleSelectInterpreter(String(interpreter.id))}
                                                     disabled={interpreter.status === 'offline'}
                                                     className={`btn px-4 sm:px-6 md:px-8 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold text-sm sm:text-base transition-all transform hover:scale-105 active:scale-95 shadow-lg flex items-center gap-1 sm:gap-2 ${isRecommended ? 'bg-gradient-to-r from-[var(--color-secondary)] to-yellow-600 border-none text-white hover:shadow-yellow-500/20' : 'btn-primary hover:shadow-[var(--color-primary)]/30'}`}
                                                 >
@@ -321,28 +352,36 @@ export default function ExpertsPage() {
                                                 </button>
                                             </div>
                                         </div>
-
                                     </div>
                                 );
                             })}
                         </div>
-                    ) : (
+                    )}
+
+                    {/* Empty state — no results for current filters */}
+                    {!isLoading && filteredInterpreters.length === 0 && interpreters.length > 0 && (
                         <div className="flex flex-col items-center justify-center py-20 text-center animate-fadeIn bg-white/5 rounded-3xl border border-white/10 p-12">
                             <div className="text-7xl mb-6 opacity-30 grayscale">🕵️</div>
                             <h3 className="text-2xl font-bold mb-3 text-white">لم نعثر على مفسرين مطابقين</h3>
                             <p className="text-gray-400 mb-8 max-w-md mx-auto">لم نجد مفسرين بهذه المواصفات حالياً. جرب تغيير خيارات البحث أو إزالة بعض الفلاتر.</p>
-                            <button
-                                onClick={() => {
-                                    setSearchQuery('');
-                                    setSelectedType('all');
-                                    setPriceRange('all');
-                                    setSpeedFilter('all');
-                                    setMinRating(false);
-                                }}
-                                className="btn btn-outline text-white hover:bg-white hover:text-black transition-colors"
-                            >
-                                عرض جميع المفسرين
-                            </button>
+                            {hasActiveFilters && (
+                                <button
+                                    onClick={handleClearFilters}
+                                    className="btn btn-outline text-white hover:bg-white hover:text-black transition-colors"
+                                >
+                                    عرض جميع المفسرين
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Empty state — truly no interpreters at all */}
+                    {!isLoading && interpreters.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-20 text-center animate-fadeIn bg-white/5 rounded-3xl border border-white/10 p-12">
+                            <div className="text-7xl mb-6 opacity-30">🌙</div>
+                            <h3 className="text-2xl font-bold mb-3 text-white">لا يوجد مفسرون متاحون حالياً</h3>
+                            <p className="text-gray-400 mb-8 max-w-md mx-auto">نعمل على إضافة مفسرين معتمدين قريباً. يمكنك في الوقت الحالي استخدام خاصية التفسير الآلي.</p>
+                            <a href="/" className="btn btn-primary">تفسير آلي فوري</a>
                         </div>
                     )}
                 </section>
