@@ -1,9 +1,10 @@
 
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import dbConnect from '@/lib/mongodb';
+import dbConnect, { withDbRetry } from '@/lib/mongodb';
 import Dream from '@/models/Dream';
 import { generateSlug, isMongoId, generateSeoTitle, generateMetaDescription } from '@/lib/slugify';
+import { fallbackDreamDetails, fallbackDreams } from '@/lib/fallbackData';
 import { generateArticleSchema, generateBreadcrumbSchema, generateFAQSchema } from '@/lib/seo';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
@@ -17,28 +18,36 @@ const BASE_URL = 'https://almofasir.com';
  * Strategy A: Lookup by seoSlug (single source of truth for URL).
  */
 async function getDream(slugOrId: string) {
-    await dbConnect();
+    try {
+        const dream = await withDbRetry(async () => {
+            // 1. Try seoSlug (primary — this is the canonical URL field)
+            let d = await Dream.findOne({
+                seoSlug: slugOrId,
+                visibilityStatus: 'public',
+                'publicVersion.content': { $exists: true }
+            }).lean();
 
-    // 1. Try seoSlug (primary — this is the canonical URL field)
-    let dream = await Dream.findOne({
-        seoSlug: slugOrId,
-        visibilityStatus: 'public',
-        'publicVersion.content': { $exists: true }
-    }).lean();
+            if (d) return d;
 
-    if (dream) return dream;
+            // 2. Fallback: direct Mongo _id lookup (backward compat for old bookmarks)
+            if (isMongoId(slugOrId)) {
+                d = await Dream.findOne({
+                    _id: slugOrId,
+                    visibilityStatus: 'public',
+                    'publicVersion.content': { $exists: true }
+                }).lean();
+                if (d) return d;
+            }
 
-    // 2. Fallback: direct Mongo _id lookup (backward compat for old bookmarks)
-    if (isMongoId(slugOrId)) {
-        dream = await Dream.findOne({
-            _id: slugOrId,
-            visibilityStatus: 'public',
-            'publicVersion.content': { $exists: true }
-        }).lean();
-        if (dream) return dream;
+            return null;
+        }, 2, 5000);
+
+        return dream;
+    } catch (e: any) {
+        console.error('[DB ERROR] MongoDB unavailable in getDream:', e?.message);
+        // Serve a safe dummy article to prevent completely breaking indexable URLs during outage
+        return { ...fallbackDreamDetails, seoSlug: slugOrId, _id: slugOrId };
     }
-
-    return null;
 }
 
 /**
@@ -51,72 +60,84 @@ async function getRelatedDreams(
     tags: string[] = [],
     limit = 4
 ) {
-    await dbConnect();
+    try {
+        const related = await withDbRetry(async () => {
+            const baseQuery = {
+                _id: { $ne: currentId },
+                visibilityStatus: 'public',
+                'publicVersion.content': { $exists: true },
+            };
 
-    const baseQuery = {
-        _id: { $ne: currentId },
-        visibilityStatus: 'public',
-        'publicVersion.content': { $exists: true },
-    };
+            const selectFields = 'publicVersion.title publicVersion.content seoSlug tags publicVersion.comprehensiveInterpretation.primarySymbol';
 
-    const selectFields = 'publicVersion.title publicVersion.content seoSlug tags publicVersion.comprehensiveInterpretation.primarySymbol';
+            // Priority 1: Match by primarySymbol
+            if (primarySymbol) {
+                const bySymbol = await Dream.find({
+                    ...baseQuery,
+                    'publicVersion.comprehensiveInterpretation.primarySymbol': primarySymbol
+                })
+                    .sort({ 'publicVersion.publishedAt': -1 })
+                    .limit(limit)
+                    .select(selectFields)
+                    .lean();
 
-    // Priority 1: Match by primarySymbol
-    if (primarySymbol) {
-        const bySymbol = await Dream.find({
-            ...baseQuery,
-            'publicVersion.comprehensiveInterpretation.primarySymbol': primarySymbol
-        })
-            .sort({ 'publicVersion.publishedAt': -1 })
-            .limit(limit)
-            .select(selectFields)
-            .lean();
+                if (bySymbol.length >= 2) {
+                    return bySymbol.map((d: any) => ({
+                        title: d.publicVersion?.title || 'حلم مفسر',
+                        slug: d.seoSlug || d._id.toString(),
+                        content: d.publicVersion?.content?.slice(0, 120) || '',
+                        primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
+                    }));
+                }
+            }
 
-        if (bySymbol.length >= 2) {
-            return bySymbol.map((d: any) => ({
+            // Priority 2: Match by secondarySymbols or tags
+            const symbolsAndTags = [...secondarySymbols, ...tags].filter(Boolean);
+            if (symbolsAndTags.length > 0) {
+                const byTags = await Dream.find({
+                    ...baseQuery,
+                    tags: { $in: symbolsAndTags }
+                })
+                    .sort({ 'publicVersion.publishedAt': -1 })
+                    .limit(limit)
+                    .select(selectFields)
+                    .lean();
+
+                if (byTags.length >= 2) {
+                    return byTags.map((d: any) => ({
+                        title: d.publicVersion?.title || 'حلم مفسر',
+                        slug: d.seoSlug || d._id.toString(),
+                        content: d.publicVersion?.content?.slice(0, 120) || '',
+                        primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
+                    }));
+                }
+            }
+
+            // Fallback: most recent public dreams
+            const recent = await Dream.find(baseQuery)
+                .sort({ 'publicVersion.publishedAt': -1 })
+                .limit(limit)
+                .select(selectFields)
+                .lean();
+
+            return recent.map((d: any) => ({
                 title: d.publicVersion?.title || 'حلم مفسر',
                 slug: d.seoSlug || d._id.toString(),
                 content: d.publicVersion?.content?.slice(0, 120) || '',
                 primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
             }));
-        }
+        }, 2, 5000);
+
+        return related;
+    } catch (e: any) {
+        console.error('[DB ERROR] MongoDB unavailable in getRelatedDreams:', e?.message);
+        return fallbackDreams.slice(0, limit).map(d => ({
+            title: d.title,
+            slug: d.slug,
+            content: d.content,
+            primarySymbol: 'رمز عام'
+        }));
     }
-
-    // Priority 2: Match by secondarySymbols or tags
-    const symbolsAndTags = [...secondarySymbols, ...tags].filter(Boolean);
-    if (symbolsAndTags.length > 0) {
-        const byTags = await Dream.find({
-            ...baseQuery,
-            tags: { $in: symbolsAndTags }
-        })
-            .sort({ 'publicVersion.publishedAt': -1 })
-            .limit(limit)
-            .select(selectFields)
-            .lean();
-
-        if (byTags.length >= 2) {
-            return byTags.map((d: any) => ({
-                title: d.publicVersion?.title || 'حلم مفسر',
-                slug: d.seoSlug || d._id.toString(),
-                content: d.publicVersion?.content?.slice(0, 120) || '',
-                primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
-            }));
-        }
-    }
-
-    // Fallback: most recent public dreams
-    const recent = await Dream.find(baseQuery)
-        .sort({ 'publicVersion.publishedAt': -1 })
-        .limit(limit)
-        .select(selectFields)
-        .lean();
-
-    return recent.map((d: any) => ({
-        title: d.publicVersion?.title || 'حلم مفسر',
-        slug: d.seoSlug || d._id.toString(),
-        content: d.publicVersion?.content?.slice(0, 120) || '',
-        primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
-    }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ dreamSlug: string }> }): Promise<Metadata> {

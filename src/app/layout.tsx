@@ -78,7 +78,7 @@ export default function RootLayout({
         <HomePageJsonLd />
         <StarBackground />
         <AuthProvider>
-          <div className="w-full flex flex-col items-center">
+          <div className="w-full flex flex-col items-center" suppressHydrationWarning>
             {children}
           </div>
         </AuthProvider>

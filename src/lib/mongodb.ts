@@ -4,7 +4,7 @@ const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
     throw new Error(
-        'Please define the MONGODB_URI environment variable inside .env.local'
+        '[DB] MONGODB_URI is not defined in .env.local — add it and restart the server'
     );
 }
 
@@ -29,7 +29,7 @@ if (!cached) {
     cached = global.mongoose = { conn: null, promise: null };
 }
 
-async function dbConnect() {
+export async function dbConnect() {
     if (cached!.conn) {
         return cached!.conn;
     }
@@ -37,21 +37,67 @@ async function dbConnect() {
     if (!cached!.promise) {
         const opts = {
             bufferCommands: false,
+            // Fast-Fail limits (5s) for production resilience
+            serverSelectionTimeoutMS: 5000,
+            connectTimeoutMS: 5000,
+            socketTimeoutMS: 5000,
         };
 
-        cached!.promise = mongoose.connect(MONGODB_URI!, opts).then((mongoose) => {
-            return mongoose.connection;
+        console.log('[DB] Connecting to MongoDB Atlas...');
+        cached!.promise = mongoose.connect(MONGODB_URI!, opts).then((m) => {
+            console.log('[DB] ✅ Connected to MongoDB Atlas successfully');
+            return m.connection;
         });
     }
 
     try {
         cached!.conn = await cached!.promise;
-    } catch (e) {
-        cached!.promise = null;
+    } catch (e: any) {
+        cached!.promise = null; // Reset so next call retries
+        console.error('[DB] ❌ MongoDB Atlas connection failed:', e?.message);
         throw e;
     }
 
     return cached!.conn;
+}
+
+/**
+ * Executes a Promise-based database operation with timeout and retries.
+ * @param operation The database query function to execute
+ * @param maxRetries Maximum number of retries (default 2)
+ * @param timeoutMs Timeout per attempt in milliseconds (default 5000)
+ */
+export async function withDbRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 2,
+    timeoutMs: number = 5000
+): Promise<T> {
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+        try {
+            await dbConnect(); // ensure DB is connected
+            
+            // Promise.race to enforce timeout
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error('DB_TIMEOUT')), timeoutMs);
+            });
+            
+            const result = await Promise.race([operation(), timeoutPromise]);
+            return result;
+        } catch (error: any) {
+            attempt++;
+            console.error(`[DB RETRY] Attempt ${attempt} failed:`, error?.message);
+            
+            if (attempt > maxRetries) {
+                console.error(`[DB RETRY] Max retries reached (${maxRetries}). Giving up.`);
+                throw error;
+            }
+            
+            // Short exponential backoff
+            await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        }
+    }
+    throw new Error('Unreachable code');
 }
 
 export default dbConnect;

@@ -34,31 +34,36 @@ export default function InterpretedDreamsPage() {
             console.log(`[DREAMS PAGE] Fetching public dreams page=${pageNum}...`);
 
             const res = await fetch(`/api/dreams/public?page=${pageNum}&limit=9`);
+            const data = await res.json().catch(() => ({}));
 
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => ({}));
-                console.error('[DREAMS PAGE] API error:', res.status, errorData);
-                throw new Error(`API returned ${res.status}`);
+            if (res.status === 503 || data?.error === 'DB_UNREACHABLE') {
+                console.error('[DREAMS PAGE] DB unreachable (503):', data);
+                if (pageNum === 1) {
+                    // We just fall back to empty instead of showing internal IP errors now
+                    setPageState('empty');
+                }
+                setHasMore(false);
+                return;
             }
 
-            const data = await res.json();
+            if (!res.ok) {
+                console.error('[DREAMS PAGE] API error:', res.status, data);
+                throw new Error(`API returned ${res.status}`);
+            }
 
             console.log('[DREAMS PAGE] API response:', {
                 success: data.success,
                 count: data.count,
                 dreamsLength: data.dreams?.length,
                 hasMore: data.hasMore,
-                currentPage: data.currentPage
             });
 
             if (data.dreams && Array.isArray(data.dreams)) {
                 if (pageNum === 1) {
-                    // First page: replace all dreams
                     const filtered = filterDuplicates(data.dreams);
                     setDreams(filtered);
                     setPageState(filtered.length === 0 ? 'empty' : 'ready');
                 } else {
-                    // Subsequent pages: append
                     setDreams(prev => filterDuplicates([...prev, ...data.dreams]));
                     setPageState('ready');
                 }
@@ -72,9 +77,8 @@ export default function InterpretedDreamsPage() {
             console.error('[DREAMS PAGE] Failed to fetch dreams:', error);
             if (pageNum === 1) {
                 setPageState('error');
-                setErrorMessage(error?.message || 'حدث خطأ أثناء تحميل البيانات');
+                setErrorMessage(error?.message || 'حدث خطأ غير متوقع');
             }
-            // On append pages, silently stop loading more
             setHasMore(false);
         }
     }, []);
@@ -147,17 +151,39 @@ export default function InterpretedDreamsPage() {
                     {/* ── Error State ── */}
                     {pageState === 'error' && (
                         <div className="text-center py-20 animate-fadeIn">
-                            <div className="text-5xl mb-4">⚠️</div>
-                            <h3 className="text-xl font-bold text-white mb-2">حدث خطأ أثناء تحميل البيانات</h3>
-                            <p className="text-[var(--color-text-muted)] mb-6">
-                                تعذّر الاتصال بقاعدة البيانات. تحقق من الاتصال أو حاول مجدداً.
-                            </p>
-                            <button
-                                onClick={handleRetry}
-                                className="btn btn-primary"
-                            >
-                                إعادة المحاولة
-                            </button>
+                            {errorMessage === 'db_unreachable' ? (
+                                <>
+                                    <div className="text-5xl mb-4">🔌</div>
+                                    <h3 className="text-xl font-bold text-white mb-2">قاعدة البيانات غير متاحة حالياً</h3>
+                                    <p className="text-[var(--color-text-muted)] mb-3 max-w-lg mx-auto text-sm leading-relaxed">
+                                        تعذّر الاتصال بـ MongoDB Atlas. على الأرجح أن عنوان IP الحالي غير مُدرج في قائمة السماح (IP Whitelist).
+                                    </p>
+                                    <div className="bg-[var(--color-bg-secondary)] border border-white/10 rounded-xl p-4 mb-6 text-right max-w-md mx-auto text-sm">
+                                        <p className="font-bold text-white mb-2">🛠 خطوات الإصلاح:</p>
+                                        <ol className="text-[var(--color-text-secondary)] space-y-1 list-decimal list-inside">
+                                            <li>افتح <span className="text-[var(--color-primary)]">cloud.mongodb.com</span></li>
+                                            <li>انتقل إلى <strong>Network Access</strong></li>
+                                            <li>اضغط <strong>Add IP Address</strong></li>
+                                            <li>اختر <strong>Allow Access from Anywhere</strong> (0.0.0.0/0) للتطوير</li>
+                                            <li>انتظر دقيقة ثم أعد المحاولة</li>
+                                        </ol>
+                                    </div>
+                                    <button onClick={handleRetry} className="btn btn-primary">
+                                        إعادة المحاولة
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="text-5xl mb-4">⚠️</div>
+                                    <h3 className="text-xl font-bold text-white mb-2">حدث خطأ أثناء تحميل البيانات</h3>
+                                    <p className="text-[var(--color-text-muted)] mb-6">
+                                        تعذّر الاتصال بقاعدة البيانات. تحقق من الاتصال أو حاول مجدداً.
+                                    </p>
+                                    <button onClick={handleRetry} className="btn btn-primary">
+                                        إعادة المحاولة
+                                    </button>
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -165,9 +191,9 @@ export default function InterpretedDreamsPage() {
                     {pageState === 'empty' && (
                         <div className="text-center py-20 text-[var(--color-text-muted)]">
                             <div className="text-4xl mb-4">📭</div>
-                            <p className="text-lg mb-2">لا توجد أحلام منشورة حتى الآن.</p>
-                            <p className="text-sm mb-6">الأحلام تظهر هنا بعد مراجعة الجودة والنشر.</p>
-                            <Link href="/" className="btn btn-secondary mt-4">كن أول من يشارك حلمه</Link>
+                            <p className="text-lg font-bold mb-2 text-white">لا توجد بيانات حالياً أو هناك مشكلة مؤقتة</p>
+                            <p className="text-sm mb-6">نواجه حالياً ضغطاً أو مشكلة مؤقتة في جلب البيانات، نعمل على حلها. شكراً لتفهمكم.</p>
+                            <button onClick={handleRetry} className="btn btn-secondary mt-4">إعادة المحاولة</button>
                         </div>
                     )}
 

@@ -379,8 +379,8 @@ export default function ExpertsPage() {
                     {!isLoading && interpreters.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-20 text-center animate-fadeIn bg-white/5 rounded-3xl border border-white/10 p-12">
                             <div className="text-7xl mb-6 opacity-30">🌙</div>
-                            <h3 className="text-2xl font-bold mb-3 text-white">لا يوجد مفسرون متاحون حالياً</h3>
-                            <p className="text-gray-400 mb-8 max-w-md mx-auto">نعمل على إضافة مفسرين معتمدين قريباً. يمكنك في الوقت الحالي استخدام خاصية التفسير الآلي.</p>
+                            <h3 className="text-2xl font-bold mb-3 text-white">لا توجد بيانات حالياً أو هناك مشكلة مؤقتة</h3>
+                            <p className="text-gray-400 mb-8 max-w-md mx-auto">نواجه حالياً ضغطاً أو مشكلة مؤقتة في جلب بيانات الخبراء، نعمل على حلها. يمكنك في الوقت الحالي استخدام القاموس أو العودة لاحقاً.</p>
                             <a href="/" className="btn btn-primary">تفسير آلي فوري</a>
                         </div>
                     )}
