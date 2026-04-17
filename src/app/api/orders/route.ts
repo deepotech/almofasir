@@ -7,6 +7,9 @@ import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 import crypto from 'crypto';
 import { interpreters, InterpreterId } from '@/lib/interpreters';
+import { verifyRateLimit } from '@/lib/ratelimit';
+import { dispatchToQStash, hasQstashConfig } from '@/lib/qstash';
+import { logger } from '@/lib/logger';
 
 import { validateAccess } from '@/lib/accessControl';
 
@@ -85,6 +88,13 @@ export async function POST(req: NextRequest) {
     console.log('ORDER CREATED FROM:', 'API /orders', Date.now());
     console.log('[API] POST /api/orders (Strict Flow)');
     try {
+        const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
+        const { success: rateLimitSuccess } = await verifyRateLimit(ip);
+        if (!rateLimitSuccess) {
+            logger.warn('Rate limit on /api/orders rejected', { event: 'RATELIMIT_REJECTED', ip });
+            return NextResponse.json({ success: false, error: 'Too many requests.', data: null }, { status: 429 });
+        }
+
         await dbConnect();
 
         let userId: string = '';
@@ -345,11 +355,24 @@ export async function POST(req: NextRequest) {
                 const contextString = buildContextString(order.context);
                 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
-                if (!OPENROUTER_API_KEY) {
-                    await new Promise(r => setTimeout(r, 1000));
-                    interpretationText = `(AI Mock) تفسير تجريبي للحلم: ${dreamText.substring(0, 20)}...`;
-                } else {
-                    const structuredInstructions = `
+                let qstashDispatched = false;
+
+                if (hasQstashConfig) {
+                    try {
+                        await dispatchToQStash('/api/jobs/process-dream', { orderId: order._id, dreamText, contextString, interpreterKey });
+                        interpretationText = "جاري تحليل الحلم الآن... يرجى تحديث الصفحة أو التحقق من قسم الأحلام لاحقاً.";
+                        qstashDispatched = true;
+                    } catch (err) {
+                        logger.error('QStash failed, falling back to direct execution', { event: 'QSTASH_FALLBACK' }, err);
+                    }
+                }
+
+                if (!qstashDispatched) {
+                    if (!OPENROUTER_API_KEY) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        interpretationText = `(AI Mock) تفسير تجريبي للحلم: ${dreamText.substring(0, 20)}...`;
+                    } else {
+                        const structuredInstructions = `
  يجب أن يكون تفسيرك مقسمًا بدقة إلى الأقسام التالية (استخدم العناوين بخط عريض):
  1. **خلاصة سريعة**: (سطرين كحد أقصى يعطي المعنى المباشر)
  2. **تفسير تفصيلي**: (شرح الرموز وترابطها)
@@ -358,27 +381,47 @@ export async function POST(req: NextRequest) {
  خاطب الرائي بصيغة: ${order.context?.gender === 'female' ? 'أنثى' : 'ذكر'}.
  ديانة: إسلامي.
  `;
-                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                        method: "POST",
-                        headers: {
-                            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                            "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-                            "X-Title": "Almofasser",
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            model: "openai/gpt-4o-mini",
-                            messages: [
-                                { role: "system", content: selectedInterpreter.systemPrompt + contextString + structuredInstructions },
-                                { role: "user", content: `حلمي: ${dreamText}` }
-                            ]
-                        })
-                    });
-                    if (response.ok) {
-                        const aiData = await response.json();
-                        interpretationText = aiData.choices[0]?.message?.content || "No response";
-                    } else {
-                        interpretationText = "عذراً، حدث خطأ في خدمة الذكاء الاصطناعي. يرجى المحاولة لاحقاً.";
+                        let aiSuccess = false;
+                        let retries = 0;
+                        while (retries <= 2 && !aiSuccess) {
+                            const aiController = new AbortController();
+                            const aiTimeoutId = setTimeout(() => aiController.abort(), 5000);
+                            try {
+                                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                                    method: "POST",
+                                    signal: aiController.signal,
+                                    headers: {
+                                        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                                        "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+                                        "X-Title": "Almofasser",
+                                        "Content-Type": "application/json"
+                                    },
+                                    body: JSON.stringify({
+                                        model: "openai/gpt-4o-mini",
+                                        messages: [
+                                            { role: "system", content: selectedInterpreter.systemPrompt + contextString + structuredInstructions },
+                                            { role: "user", content: `حلمي: ${dreamText}` }
+                                        ]
+                                    })
+                                });
+                                clearTimeout(aiTimeoutId);
+                                if (response.ok) {
+                                    const aiData = await response.json();
+                                    interpretationText = aiData.choices[0]?.message?.content || "No response";
+                                    aiSuccess = true;
+                                } else {
+                                    console.error(`[AI] OpenRouter returned ${response.status}`);
+                                    retries++;
+                                }
+                            } catch (fetchErr: any) {
+                                clearTimeout(aiTimeoutId);
+                                console.error('[AI] Fetch error:', fetchErr?.message);
+                                retries++;
+                            }
+                        }
+                        if (!aiSuccess) {
+                            interpretationText = "عذراً، استغرق التفسير وقتاً طويلاً أو حدث خطأ في خدمة الذكاء الاصطناعي. يرجى المحاولة مجدداً.";
+                        }
                     }
                 }
             } catch (e) {
@@ -406,7 +449,7 @@ export async function POST(req: NextRequest) {
         console.error('[API] Order Global Error:', error);
         const status = (error as any).status || 500;
         return NextResponse.json(
-            { error: error.message || 'Internal Error', details: (error as any).details },
+            { success: false, error: error.message || 'Internal Error', data: null },
             { status }
         );
     }

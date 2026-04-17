@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
         console.error(`[DB ERROR] ❌ /api/dreams/public — Failed completely (${elapsed}ms):`, error?.message);
 
         // Ultimate Resiliency: Return Cache or Mock Data!
-        const fallbackResponse = getCachedOrFallback(cacheKey, 'dreams');
+        const fallbackResponse = await getCachedOrFallback(cacheKey, 'dreams');
 
         return NextResponse.json({
             success: true,

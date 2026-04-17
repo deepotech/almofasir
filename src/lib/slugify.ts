@@ -62,39 +62,48 @@ export function isMongoId(str: string): boolean {
 
 
 /**
- * Generate a title for SEO from dream content
+ * Generate a title for SEO from dream content (Curiosity Hooks & CTR focus)
  */
 export function generateSeoTitle(
     dreamTitle: string | undefined,
     tags: string[] | undefined,
     content: string
 ): string {
-    // If title exists, use it
+    // If title exists and is good, we enhance it slightly if possible, or use as is
     if (dreamTitle && dreamTitle.length > 10) {
         return dreamTitle;
     }
 
-    // Generate from tags
+    // Generate from tags using Curiosity Hooks
     if (tags && tags.length > 0) {
         const mainSymbol = tags[0];
-        return `ما تفسير حلم ${mainSymbol} في المنام؟`;
+        const hooks = [
+            `تفسير حلم ${mainSymbol}: هل هي بشارة أم تحذير؟ 🚨`,
+            `رؤية ${mainSymbol} في المنام: رسالة خفية يجب أن تعرفها!`,
+            `ماذا يعني تكرار حلم ${mainSymbol}؟ المعنى النفسي والشرعي`,
+            `تفسير حلم ${mainSymbol}: التفاصيل الشاملة لابن سيرين`
+        ];
+        // Pick a pseudo-random hook based on the symbol's length to ensure consistency
+        const index = mainSymbol.length % hooks.length;
+        return hooks[index].slice(0, 60); // Keep under 60 chars
     }
 
     // Generate from content preview
-    const preview = content.slice(0, 50).trim();
-    return `تفسير حلم: ${preview}...`;
+    const preview = content.slice(0, 30).trim();
+    return `حلمت بـ "${preview}": اكتشف التفسير الغامض الآن`.slice(0, 60);
 }
 
 /**
- * Generate meta description (≤160 chars)
+ * Generate meta description (≤155 chars) with emotional triggers
  */
 export function generateMetaDescription(
     interpretation: string,
     tags: string[] | undefined
 ): string {
-    const tagsText = tags && tags.length > 0
-        ? ` الرموز: ${tags.slice(0, 3).join('، ')}.`
-        : '';
+    const mainSymbol = tags && tags.length > 0 ? tags[0] : 'هذا الحلم';
+    
+    // The Emotional/Mystery Hook (Approx 50 chars)
+    const hook = `هل رأيت ${mainSymbol} في المنام وتطاردك الحيرة؟ اكتشف السر: `;
 
     // Clean interpretation text
     const cleanInterpretation = interpretation
@@ -103,10 +112,14 @@ export function generateMetaDescription(
         .replace(/\s+/g, ' ')  // Normalize spaces
         .trim();
 
-    const maxLength = 155 - tagsText.length;
-    const truncated = cleanInterpretation.length > maxLength
-        ? cleanInterpretation.slice(0, maxLength - 3) + '...'
-        : cleanInterpretation;
+    const maxLength = 153 - hook.length;
+    let snippet = cleanInterpretation.slice(0, maxLength);
+    
+    // Avoid cutting words in half
+    const lastSpace = snippet.lastIndexOf(' ');
+    if (lastSpace > 0 && cleanInterpretation.length > maxLength) {
+        snippet = snippet.substring(0, lastSpace) + '...';
+    }
 
-    return truncated + tagsText;
+    return hook + snippet;
 }

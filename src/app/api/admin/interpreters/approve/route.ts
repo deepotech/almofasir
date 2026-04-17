@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
+import dbConnect from '@/lib/mongodb';
 import InterpreterRequest from '@/models/InterpreterRequest';
 import User from '@/models/User';
 import Interpreter from '@/models/Interpreter'; // Added
@@ -7,7 +7,7 @@ import nodemailer from 'nodemailer';
 
 export async function POST(req: Request) {
     try {
-        await connectDB();
+        await dbConnect();
 
         const { requestId, email, name } = await req.json();
 

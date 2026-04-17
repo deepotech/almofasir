@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
-import dbConnect from '@/lib/mongodb';
+import dbConnect, { withDbRetry } from '@/lib/mongodb';
 import Dream from '@/models/Dream';
 
 // Initialize Firebase Admin
@@ -13,6 +13,9 @@ export async function GET(
 ) {
     try {
         const { id } = await params;
+
+        // Ensure database is ready before any expensive logic
+        await dbConnect();
 
         // Verify authentication
         const authHeader = request.headers.get('Authorization');
@@ -45,12 +48,13 @@ export async function GET(
             }
         }
 
-        await dbConnect();
-
-        const dream = await Dream.findOne({
-            _id: id,
-            userId: userId
-        });
+        // Fetch dream with retry
+        const dream = await withDbRetry(async () => {
+            return await Dream.findOne({
+                _id: id,
+                userId: userId
+            });
+        }, 2, 5000);
 
         if (!dream) {
             return NextResponse.json({ error: 'الحلم غير موجود' }, { status: 404 });

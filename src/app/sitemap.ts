@@ -1,5 +1,5 @@
 import { MetadataRoute } from 'next';
-import { dreamSymbols } from '@/data/symbols';
+import { getAllSymbols } from '@/lib/symbolsData';
 import { interpreters } from '@/lib/interpreters';
 import dbConnect from '@/lib/mongodb';
 import Dream from '@/models/Dream';
@@ -145,12 +145,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         },
     ];
 
-    // Dynamic symbol pages
-    const symbolPages: MetadataRoute.Sitemap = dreamSymbols.map((symbol) => ({
+    // Dynamic symbol pages (Hybrid DB + Static)
+    const symbols = await getAllSymbols();
+    const symbolPages: MetadataRoute.Sitemap = symbols.map((symbol) => ({
         url: `${BASE_URL}/symbols/${symbol.id}`,
         lastModified: currentDate,
         changeFrequency: 'monthly' as const,
-        priority: 0.7,
+        priority: 0.9, // Elevated priority as Pillar Pages
     }));
 
     // Dynamic interpreter pages

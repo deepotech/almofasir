@@ -52,7 +52,7 @@ export const metadata: Metadata = {
   },
   category: "تفسير الأحلام",
   verification: {
-    google: "YOUR_GOOGLE_VERIFICATION_CODE",
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
   },
 };
 

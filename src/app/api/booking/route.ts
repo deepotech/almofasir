@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
-import connectDB from '@/lib/mongodb';
+import dbConnect from '@/lib/mongodb';
 import Booking from '@/models/Booking';
 import Interpreter from '@/models/Interpreter';
 import { createOrder, generateDreamHash } from '@/lib/orders';
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
         const emailConfigured = process.env.EMAIL_USER && process.env.EMAIL_PASS;
 
         // Connect to DB
-        await connectDB();
+        await dbConnect();
 
         // Safe Interpreter Fetch logic
         let interpreterDoc = null;

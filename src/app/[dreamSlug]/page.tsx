@@ -5,10 +5,11 @@ import dbConnect, { withDbRetry } from '@/lib/mongodb';
 import Dream from '@/models/Dream';
 import { generateSlug, isMongoId, generateSeoTitle, generateMetaDescription } from '@/lib/slugify';
 import { fallbackDreamDetails, fallbackDreams } from '@/lib/fallbackData';
-import { generateArticleSchema, generateBreadcrumbSchema, generateFAQSchema } from '@/lib/seo';
+import { generateArticleSchema, generateBreadcrumbSchema, generateFAQSchema, generateDreamListSchema } from '@/lib/seo';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import DreamArticle from '@/components/DreamArticle';
+import EngagementWidget from '@/components/seo/EngagementWidget';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,8 +46,8 @@ async function getDream(slugOrId: string) {
         return dream;
     } catch (e: any) {
         console.error('[DB ERROR] MongoDB unavailable in getDream:', e?.message);
-        // Serve a safe dummy article to prevent completely breaking indexable URLs during outage
-        return { ...fallbackDreamDetails, seoSlug: slugOrId, _id: slugOrId };
+        // Do not render broken fallback object; trigger standard 404/NotFound UI
+        return null;
     }
 }
 
@@ -258,6 +259,18 @@ export default async function DreamDetailsPage({ params }: { params: Promise<{ d
         dream.tags,
     );
 
+    // JSON-LD: ItemList (Related Dreams)
+    const relatedListJsonLd = related && related.length > 0 
+        ? generateDreamListSchema(
+            related.map(r => ({
+                title: r.title,
+                url: `${BASE_URL}/${r.slug}`,
+                description: r.content || ''
+            })),
+            canonicalUrl
+        )
+        : null;
+
     // Serialize (plain objects only — no Mongoose documents)
     const serializedDream = JSON.parse(JSON.stringify(dream));
 
@@ -277,9 +290,18 @@ export default async function DreamDetailsPage({ params }: { params: Promise<{ d
                     dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
                 />
             )}
+            {relatedListJsonLd && (
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{ __html: JSON.stringify(relatedListJsonLd) }}
+                />
+            )}
             <Header />
             <main className="min-h-screen pt-24 pb-16">
                 <DreamArticle dream={serializedDream} related={related} />
+                <div className="container mt-12">
+                    <EngagementWidget slug={slug} />
+                </div>
             </main>
             <Footer />
         </>

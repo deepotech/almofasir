@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { renderTextWithBoldAndLinks } from "@/lib/internalLinking";
 
 type FAQ = { question: string; answer: string };
 type SubSection = { heading: string; content: string };
@@ -21,21 +22,7 @@ type DreamArticleProps = {
     related?: RelatedDream[];
 };
 
-// ── Safe bold text renderer ──
-function renderTextWithBold(text: string): (string | React.ReactElement)[] {
-    if (!text) return [text];
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    return parts.map((part, i) => {
-        if (part.startsWith("**") && part.endsWith("**")) {
-            return (
-                <strong key={i} className="text-[var(--color-primary-light)] font-semibold">
-                    {part.slice(2, -2)}
-                </strong>
-            );
-        }
-        return part;
-    });
-}
+// Replaced by renderTextWithBoldAndLinks from lib
 
 // ── Legacy fallback renderer ──
 function LegacyInterpretationContent({ text }: { text: string }) {
@@ -52,7 +39,7 @@ function LegacyInterpretationContent({ text }: { text: string }) {
                             {lines.map((line, lIdx) => (
                                 <li key={lIdx} className="dream-bullet-item">
                                     <span className="dream-bullet-dot">●</span>
-                                    <span>{renderTextWithBold(line.replace(/^-\s*/, ""))}</span>
+                                    <span>{renderTextWithBoldAndLinks(line.replace(/^-\s*/, ""))}</span>
                                 </li>
                             ))}
                         </ul>
@@ -60,7 +47,7 @@ function LegacyInterpretationContent({ text }: { text: string }) {
                 }
                 return (
                     <p key={idx} className="dream-paragraph">
-                        {renderTextWithBold(paragraph)}
+                        {renderTextWithBoldAndLinks(paragraph)}
                     </p>
                 );
             })}

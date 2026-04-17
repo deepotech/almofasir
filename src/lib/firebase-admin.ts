@@ -1,82 +1,79 @@
 import * as admin from 'firebase-admin';
 
-interface FirebaseAdminConfig {
-    projectId: string;
-    clientEmail: string;
-    privateKey: string;
-}
-
 export const initFirebaseAdmin = () => {
-    if (!admin.apps.length) {
-        const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-        const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-        const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+    if (admin.apps.length) return; // Already initialized
 
-        if (projectId && clientEmail && privateKey) {
-            admin.initializeApp({
-                credential: admin.credential.cert({
-                    projectId,
-                    clientEmail,
-                    privateKey: privateKey.replace(/\\n/g, '\n'),
-                }),
-            });
-        } else {
-            // Fallback for development/build without secrets - preventing crash
-            // Note: verifyIdToken will fail if not properly initialized
-            console.warn('Firebase Admin not initialized: Missing Service Account Credentials.');
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
-            // In a real scenario, we might initialize with applicationDefault() 
-            // if running in GCP, or throw an error.
-            // For this demo, we verify if we can proceed without craching.
-            try {
-                admin.initializeApp();
-            } catch (e) {
-                console.error('Failed to initialize Firebase Admin automatically:', e);
-            }
+    if (projectId && clientEmail && privateKey) {
+        admin.initializeApp({
+            credential: admin.credential.cert({
+                projectId,
+                clientEmail,
+                privateKey: privateKey.replace(/\\n/g, '\n'),
+            }),
+        });
+        console.log('[Firebase Admin] ✅ Initialized with Service Account');
+    } else {
+        console.warn('[Firebase Admin] ⚠️ Missing Service Account credentials (FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY). Token verification will use fallback decode.');
+        try {
+            admin.initializeApp({ projectId: projectId || 'almofaser' });
+        } catch (e) {
+            // ignore if already initialized
         }
     }
 };
-// Initialize immediately
+
+// Initialize immediately on module load
 initFirebaseAdmin();
 
-export const auth = admin.apps.length ? admin.auth() : null;
-export const db = admin.apps.length ? admin.firestore() : null;
+const hasServiceAccount = !!(process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY);
+
+export const auth = hasServiceAccount && admin.apps.length ? admin.auth() : null;
+export const db = hasServiceAccount && admin.apps.length ? admin.firestore() : null;
 
 /**
- * Verifies the ID token. 
- * If Firebase Admin is not configured (missing Service Account), 
- * it falls back to insecurely decoding the token for development purposes.
+ * Verifies the ID token.
+ * - If Firebase Admin Service Account credentials are present → uses Firebase Admin SDK (secure/production).
+ * - Otherwise → falls back to JWT payload decode (dev only, not cryptographically verified).
  */
-export const verifyIdToken = async (token: string) => {
-    if (auth && process.env.FIREBASE_PRIVATE_KEY) {
+export const verifyIdToken = async (token: string): Promise<{ uid: string; email?: string; [key: string]: unknown }> => {
+    if (hasServiceAccount) {
         try {
-            return await auth.verifyIdToken(token);
+            const adminAuth = admin.auth();
+            const decoded = await adminAuth.verifyIdToken(token);
+            return decoded as { uid: string; email?: string; [key: string]: unknown };
         } catch (error) {
-            console.error("Firebase Admin Verification Failed:", error);
-            // Fallthrough to decode if verification fails in dev? No, failing verification is good.
+            console.error('[Firebase Admin] Token verification failed:', error);
             throw error;
         }
     }
 
-    // Fallback for Development without Service Account
-    console.warn('⚠️ Firebase Admin credentials missing. Using insecure token decoding for development.');
+    // ── Development Fallback: Decode JWT without verification ──────────────
+    // WARNING: This is NOT cryptographically secure. Only used when Service Account is missing.
+    console.warn('[Firebase Admin] Using insecure JWT decode fallback (no Service Account configured).');
     try {
         const parts = token.split('.');
-        if (parts.length < 2) throw new Error('Invalid token format');
+        if (parts.length < 3) throw new Error('Invalid JWT format');
 
-        // Base64 decode the payload
+        // Fix base64url encoding to standard base64
         const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-        const padding = '='.repeat((4 - payloadBase64.length % 4) % 4);
-        const payloadJson = Buffer.from(payloadBase64 + padding, 'base64').toString();
+        const padding = '='.repeat((4 - (payloadBase64.length % 4)) % 4);
+        const payloadJson = Buffer.from(payloadBase64 + padding, 'base64').toString('utf-8');
         const payload = JSON.parse(payloadJson);
 
+        const uid = payload.user_id || payload.sub;
+        if (!uid) throw new Error('Cannot extract uid from token payload');
+
         return {
-            uid: payload.sub || payload.user_id,
+            uid,
             email: payload.email,
-            ...payload
+            ...payload,
         };
     } catch (e) {
-        console.error('Failed to decode token manually:', e);
+        console.error('[Firebase Admin] Failed to decode token manually:', e);
         throw new Error('Invalid token');
     }
 };

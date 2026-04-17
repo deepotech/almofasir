@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
+import dbConnect from '@/lib/mongodb';
 import InterpreterRequest from '@/models/InterpreterRequest';
 import nodemailer from 'nodemailer';
 
@@ -7,7 +7,7 @@ export async function POST(req: Request) {
     console.log('[API] Join Request Started'); // Start log
     try {
         console.time('[Performance] DB Connect');
-        await connectDB();
+        await dbConnect();
         console.timeEnd('[Performance] DB Connect');
 
         const body = await req.json();

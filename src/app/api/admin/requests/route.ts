@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
+import dbConnect from '@/lib/mongodb';
 import InterpreterRequest from '@/models/InterpreterRequest';
 
 export async function GET() {
     try {
-        await connectDB();
+        await dbConnect();
 
         // Fetch all requests, sorted by newest first
         const requests = await InterpreterRequest.find({}).sort({ createdAt: -1 });

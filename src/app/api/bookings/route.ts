@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
-import connectDB from '@/lib/mongodb';
+import dbConnect from '@/lib/mongodb';
 import Booking from '@/models/Booking';
 import User from '@/models/User';
 
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'البريد الإلكتروني غير متوفر في التوكن' }, { status: 400 });
         }
 
-        await connectDB();
+        await dbConnect();
 
         // Find bookings by email (handling both guest bookings linked by email and authenticated bookings)
         const bookings = await Booking.find({ userEmail: userEmail }).sort({ createdAt: -1 });

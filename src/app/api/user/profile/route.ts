@@ -2,11 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import Interpreter from '@/models/Interpreter';
-import { getAuth } from 'firebase-admin/auth';
-import { initFirebaseAdmin } from '@/lib/firebase-admin';
+import { verifyIdToken } from '@/lib/firebase-admin';
 import InterpreterRequest from '@/models/InterpreterRequest';
-
-initFirebaseAdmin();
 
 export async function GET(req: NextRequest) {
     try {
@@ -18,26 +15,20 @@ export async function GET(req: NextRequest) {
         }
 
         const token = authHeader.split('Bearer ')[1];
-        let userId;
+        let userId: string | undefined;
         let email: string | undefined;
 
         try {
-            const decodedToken = await getAuth().verifyIdToken(token);
-            userId = decodedToken.uid;
-            email = decodedToken.email;
+            const decoded = await verifyIdToken(token);
+            userId = decoded.uid;
+            email = decoded.email;
         } catch (authError) {
-            if (process.env.NODE_ENV === 'development') {
-                try {
-                    const payload = token.split('.')[1];
-                    const decodedValue = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
-                    userId = decodedValue.user_id || decodedValue.sub;
-                    email = decodedValue.email || `${userId}@example.com`;
-                } catch (decodeError) {
-                    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-                }
-            } else {
-                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-            }
+            console.error('[API Profile GET] Token verification failed:', authError);
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        if (!userId) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         // Upsert user to ensure they exist in DB
@@ -72,6 +63,11 @@ export async function GET(req: NextRequest) {
             }
             if (role === 'admin' && user.role !== 'admin') {
                 user.role = 'admin';
+                needsSave = true;
+            }
+            // Ensure status field is set (fix for existing users created before status field was added)
+            if (!user.status) {
+                user.status = 'active';
                 needsSave = true;
             }
             if (needsSave) await user.save();

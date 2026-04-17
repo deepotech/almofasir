@@ -5,6 +5,9 @@ import DreamRequest from '@/models/DreamRequest';
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 import { slugifyArabic } from '@/lib/slugifyArabic';
+import { verifyRateLimit } from '@/lib/ratelimit';
+import { dispatchToQStash, hasQstashConfig } from '@/lib/qstash';
+import { logger } from '@/lib/logger';
 
 initFirebaseAdmin();
 
@@ -261,15 +264,46 @@ function validateArticleStructure(article: any): { valid: boolean; failures: str
     return { valid: failures.length === 0, failures };
 }
 
+export const maxDuration = 60; // Allow sufficient async execution timeframe
 export async function POST(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
+        
+        let authHeader = req.headers.get('Authorization');
+        const isInternalQstash = req.headers.get('upstash-signature') || req.headers.get('Authorization') === `Bearer ${process.env.QSTASH_TOKEN}`;
+        
+        if (!isInternalQstash) {
+            const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
+            const { success: rateLimitSuccess } = await verifyRateLimit(ip);
+            if (!rateLimitSuccess) {
+                logger.warn('Rate limit on /publish rejected', { event: 'RATELIMIT_REJECTED', ip });
+                return NextResponse.json({ success: false, error: 'Too many requests.', data: null }, { status: 429 });
+            }
+
+            if (hasQstashConfig) {
+                try {
+                    await dispatchToQStash(`/api/dreams/${id}/publish`, { triggerAuth: authHeader });
+                    return NextResponse.json({ success: true, message: 'Processing SEO article in background via QStash' });
+                } catch (e) {
+                    logger.error('Background publish failed to queue, running directly', { event: 'QSTASH_FALLBACK_PUBLISH' }, e);
+                }
+            }
+        } else {
+            // Read forwarded auth header from payload so we still know who this belongs to
+            try {
+                const body = await req.json();
+                if (body && body.triggerAuth) {
+                    authHeader = body.triggerAuth;
+                }
+            } catch (e) {}
+        }
+
         await dbConnect();
 
         // 1. Authenticate
-        const authHeader = req.headers.get('Authorization');
         let userId: string | undefined;
 
         if (authHeader?.startsWith('Bearer ')) {
@@ -597,20 +631,31 @@ export async function POST(
                         console.log(`[Publish] Retry #${attempt - 1}: sending Fix & Expand. Failures: ${lastValidation.failures.join(', ')}`);
                     }
 
-                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                        method: "POST",
-                        headers: {
-                            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                            "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-                            "X-Title": "Almofasser Publisher",
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            model: "openai/gpt-4o-mini",
-                            messages,
-                            response_format: { type: "json_object" }
-                        })
-                    });
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
+                    let response;
+                    try {
+                        response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                            method: "POST",
+                            signal: controller.signal,
+                            headers: {
+                                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                                "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+                                "X-Title": "Almofasser Publisher",
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({
+                                model: "openai/gpt-4o-mini",
+                                messages,
+                                response_format: { type: "json_object" }
+                            })
+                        });
+                        clearTimeout(timeoutId);
+                    } catch (fetchErr) {
+                        clearTimeout(timeoutId);
+                        console.error(`[Publish] Fetch error on attempt ${attempt}:`, fetchErr);
+                        continue; // try next attempt
+                    }
 
                     if (!response.ok) {
                         console.error(`[Publish] AI API error (attempt ${attempt}): ${response.status} ${response.statusText}`);
@@ -776,6 +821,6 @@ ${legacySymbolsList}
 
     } catch (error) {
         console.error('Error publishing dream:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+        return NextResponse.json({ success: false, error: 'Internal Server Error', data: null }, { status: 500 });
     }
 }

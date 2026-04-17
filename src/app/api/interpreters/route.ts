@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
             total: formatted.length
         };
 
-        setCache(cacheKey, responseData, 3600); // cache for 1 hour
+        await setCache(cacheKey, responseData, 3600); // cache for 1 hour
 
         return NextResponse.json({
             success: true,
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
         console.error(`[DB ERROR] ❌ /api/interpreters — Failed completely (${elapsed}ms):`, error?.message);
 
         // Ultimate Resiliency: Return Cache or Mock Data!
-        const fallbackResponse = getCachedOrFallback(cacheKey, 'interpreters');
+        const fallbackResponse = await getCachedOrFallback(cacheKey, 'interpreters');
 
         return NextResponse.json({
             success: true,

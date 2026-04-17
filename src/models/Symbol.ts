@@ -5,6 +5,7 @@ export interface ISymbol extends Document {
     slug: string;
     category: string;
     icon: string;
+    aliases: string[];
     interpretations: {
         general: string;
         ibn_sirin?: string;
@@ -25,6 +26,7 @@ const SymbolSchema: Schema = new Schema(
         slug: { type: String, required: true, unique: true, index: true },
         category: { type: String, required: true },
         icon: { type: String, default: '💭' },
+        aliases: [{ type: String }],
         interpretations: {
             general: { type: String, required: true },
             ibn_sirin: { type: String },

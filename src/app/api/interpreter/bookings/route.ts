@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
+import dbConnect from '@/lib/mongodb';
 import Booking from '@/models/Booking';
 import Interpreter from '@/models/Interpreter';
 import { verifyIdToken } from '@/lib/firebase-admin';
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
         const userId = decodedToken.uid;
         console.log('Fetching bookings for user:', userId);
 
-        await connectDB();
+        await dbConnect();
 
         // 1. Find the Interpreter profile associated with this User ID
         const interpreter = await Interpreter.findOne({ userId });

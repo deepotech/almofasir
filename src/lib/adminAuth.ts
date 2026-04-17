@@ -39,7 +39,8 @@ export async function verifyAdmin(req: NextRequest): Promise<{ authorized: boole
             return { authorized: false, response: NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 }) };
         }
 
-        if (adminUser.status !== 'active') {
+        // Treat missing status as 'active' (for users created before the status field was added)
+        if (adminUser.status && adminUser.status !== 'active') {
             return { authorized: false, response: NextResponse.json({ error: 'Account suspended' }, { status: 403 }) };
         }
 
