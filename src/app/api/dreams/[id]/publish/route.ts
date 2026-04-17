@@ -329,7 +329,6 @@ export async function POST(
             }
         }
 
-        const { id } = await params;
         let dream = await Dream.findById(id);
         let fromRequest = false;
 
