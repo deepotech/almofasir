@@ -57,6 +57,13 @@ export async function dbConnect() {
     } catch (e: any) {
         cached!.promise = null; // Reset so next call retries
         console.error('[DB] ❌ MongoDB Atlas connection failed:', e?.message);
+        if (e.name === 'MongooseServerSelectionError' && e.reason && e.reason.servers) {
+            console.error('[DB DEBUG] Servers Topology State:');
+            const servers = Array.from(e.reason.servers.entries());
+            servers.forEach(([address, server]: [string, any]) => {
+                console.error(`- Server ${address}: error = ${server.error?.message || 'unknown'}`);
+            });
+        }
         throw e;
     }
 
