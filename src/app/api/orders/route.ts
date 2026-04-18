@@ -448,8 +448,15 @@ export async function POST(req: NextRequest) {
     } catch (error: any) {
         console.error('[API] Order Global Error:', error);
         const status = (error as any).status || 500;
+        let errorMessage = error.message || 'Internal Error';
+        
+        // Sanitize database connection errors for the end-user
+        if (errorMessage.includes('MongoDB') || errorMessage.includes('Atlas') || errorMessage.includes('MongoTimeout')) {
+            errorMessage = 'حدث خطأ في الاتصال بقاعدة البيانات. يرجى المحاولة لاحقاً.';
+        }
+
         return NextResponse.json(
-            { success: false, error: error.message || 'Internal Error', data: null },
+            { success: false, error: errorMessage, data: null },
             { status }
         );
     }
