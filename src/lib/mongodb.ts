@@ -41,6 +41,8 @@ export async function dbConnect() {
             serverSelectionTimeoutMS: 5000,
             connectTimeoutMS: 5000,
             socketTimeoutMS: 5000,
+            // Force IPv4 support for Node 18+ / Railway environments
+            family: 4,
         };
 
         console.log('[DB] Connecting to MongoDB Atlas...');
