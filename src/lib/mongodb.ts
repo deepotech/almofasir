@@ -37,10 +37,10 @@ export async function dbConnect() {
     if (!cached!.promise) {
         const opts = {
             bufferCommands: false,
-            // Fast-Fail limits (5s) for production resilience
-            serverSelectionTimeoutMS: 5000,
-            connectTimeoutMS: 5000,
-            socketTimeoutMS: 5000,
+            // Standard limits (30s) instead of aggressive 5s to prevent cold-start timeouts
+            serverSelectionTimeoutMS: 30000,
+            connectTimeoutMS: 30000,
+            socketTimeoutMS: 30000,
             // Force IPv4 support for Node 18+ / Railway environments
             family: 4,
         };
