@@ -103,9 +103,9 @@ export default async function SymbolDetailPage({ params }: PageProps) {
                         </div>
 
                         {/* Symbol Header */}
-                        <div className="bg-white rounded-3xl p-8 shadow-sm border border-[var(--color-border)] text-center mb-12">
+                        <div className="bg-white/5 backdrop-blur-md rounded-3xl p-8 border border-white/10 text-center mb-12 shadow-lg">
                             <div className="text-6xl mb-6">{symbol.icon}</div>
-                            <h1 className="text-3xl md:text-5xl font-bold text-[var(--color-primary-dark)] mb-4">
+                            <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">
                                 تفسير حلم {symbol.name}
                             </h1>
                             <p className="text-[var(--color-text-secondary)] text-lg leading-relaxed max-w-2xl mx-auto">
@@ -132,10 +132,10 @@ export default async function SymbolDetailPage({ params }: PageProps) {
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {relatedDreams.map((dream: any) => (
-                                        <Link href={`/${dream.seoSlug}`} key={dream._id.toString()} className="bg-white p-4 rounded-xl border border-[var(--color-border)] hover:border-[var(--color-primary)]/40 transition-colors shadow-sm flex items-center gap-3">
+                                        <Link href={`/${dream.seoSlug}`} key={dream._id.toString()} className="bg-white/5 backdrop-blur-md p-4 rounded-xl border border-white/10 hover:border-[var(--color-primary)]/40 transition-colors shadow-sm flex items-center gap-3 hover:bg-white/10">
                                             <span className="text-2xl">📖</span>
                                             <div>
-                                                <h4 className="font-bold text-[var(--color-text-primary)] hover:text-[var(--color-primary)]">{dream.publicVersion?.title || 'تفسير حلم'}</h4>
+                                                <h4 className="font-bold text-white hover:text-[var(--color-primary-light)]">{dream.publicVersion?.title || 'تفسير حلم'}</h4>
                                             </div>
                                         </Link>
                                     ))}
@@ -152,11 +152,11 @@ export default async function SymbolDetailPage({ params }: PageProps) {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {tabs.map(tab => (
-                                    <div key={tab.id} className="bg-white p-6 rounded-2xl shadow-sm border border-[var(--color-border)] hover:shadow-md transition-shadow">
-                                        <h4 className="text-[var(--color-primary)] font-bold text-lg mb-3 flex items-center gap-2">
+                                    <div key={tab.id} className="bg-white/5 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/10 hover:bg-white/10 transition-colors">
+                                        <h4 className="text-[var(--color-primary-light)] font-bold text-lg mb-3 flex items-center gap-2">
                                             {tab.label}
                                         </h4>
-                                        <p className="text-[var(--color-text-secondary)] leading-relaxed">{tab.content}</p>
+                                        <p className="text-gray-300 leading-relaxed">{tab.content}</p>
                                     </div>
                                 ))}
                             </div>
@@ -168,24 +168,24 @@ export default async function SymbolDetailPage({ params }: PageProps) {
                         {(symbol.interpretations.ibnSirin || symbol.interpretations.nabulsi) && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
                                 {symbol.interpretations.ibnSirin && (
-                                    <div className="bg-white p-8 rounded-3xl shadow-sm border border-[#f59e0b]/20 relative overflow-hidden">
+                                    <div className="bg-white/5 backdrop-blur-md p-8 rounded-3xl shadow-sm border border-[#f59e0b]/20 relative overflow-hidden hover:bg-white/10 transition-colors">
                                         <div className="absolute top-0 right-0 w-32 h-32 bg-[#f59e0b]/5 rounded-bl-full" />
                                         <h4 className="text-xl font-bold text-[#f59e0b] mb-4 flex items-center gap-2">
                                             <span>📜</span>
                                             ابن سيرين
                                         </h4>
-                                        <p className="text-[var(--color-text-secondary)] leading-loose font-medium italic relative z-10">"{symbol.interpretations.ibnSirin}"</p>
+                                        <p className="text-gray-300 leading-loose font-medium italic relative z-10">"{symbol.interpretations.ibnSirin}"</p>
                                     </div>
                                 )}
 
                                 {symbol.interpretations.nabulsi && (
-                                    <div className="bg-white p-8 rounded-3xl shadow-sm border border-[#8b5cf6]/20 relative overflow-hidden">
+                                    <div className="bg-white/5 backdrop-blur-md p-8 rounded-3xl shadow-sm border border-[#8b5cf6]/20 relative overflow-hidden hover:bg-white/10 transition-colors">
                                         <div className="absolute top-0 right-0 w-32 h-32 bg-[#8b5cf6]/5 rounded-bl-full" />
                                         <h4 className="text-xl font-bold text-[#8b5cf6] mb-4 flex items-center gap-2">
                                             <span>📚</span>
                                             النابلسي
                                         </h4>
-                                        <p className="text-[var(--color-text-secondary)] leading-loose font-medium italic relative z-10">"{symbol.interpretations.nabulsi}"</p>
+                                        <p className="text-gray-300 leading-loose font-medium italic relative z-10">"{symbol.interpretations.nabulsi}"</p>
                                     </div>
                                 )}
                             </div>
