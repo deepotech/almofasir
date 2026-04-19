@@ -2,50 +2,21 @@ import Link from 'next/link';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 
-// Educational content data
 const articles = [
     {
-        id: 'dream-vs-vision',
-        title: 'الفرق بين الرؤيا والحلم',
-        category: 'شرعي',
-        excerpt: 'تعرف على الفرق الشرعي بين الرؤيا الصادقة من الله والحلم من الشيطان وحديث النفس.',
-        icon: '📜',
+        id: 'hugging-dead-dream-interpretation',
+        title: 'عناق الميت في المنام.. هل له دلالة سيئة؟',
+        category: 'تفسيرات شاملة',
+        excerpt: 'نقدم نظرة شاملة لرمز عناق الميت في المنام بين البشرى وحديث النفس.',
+        icon: '🫂',
     },
     {
-        id: 'etiquette',
-        title: 'آداب النوم والاستيقاظ',
-        category: 'شرعي',
-        excerpt: 'الأذكار والأدعية المستحبة قبل النوم وعند الاستيقاظ من الحلم.',
-        icon: '🌙',
-    },
-    {
-        id: 'bad-dreams',
-        title: 'كيفية التعامل مع الأحلام المزعجة',
-        category: 'شرعي',
-        excerpt: 'ماذا تفعل عند رؤية حلم مزعج؟ الهدي النبوي في التعامل مع الأحلام السيئة.',
-        icon: '😰',
-    },
-    {
-        id: 'freud-jung',
-        title: 'نظريات فرويد ويونغ في تفسير الأحلام',
-        category: 'نفسي',
-        excerpt: 'مقدمة مبسطة لأشهر نظريات علم النفس في تفسير الأحلام.',
-        icon: '🧠',
-    },
-    {
-        id: 'symbols-psychology',
-        title: 'الرموز والعقل الباطن',
-        category: 'نفسي',
-        excerpt: 'كيف يعبر العقل الباطن عن مشاعرنا من خلال رموز الأحلام.',
-        icon: '💭',
-    },
-    {
-        id: 'recurring-dreams',
-        title: 'الأحلام المتكررة ومعناها',
-        category: 'نفسي',
-        excerpt: 'لماذا نرى نفس الحلم مراراً؟ وما الرسائل التي يحملها؟',
-        icon: '🔄',
-    },
+        id: 'car-dream-interpretation',
+        title: 'تفسير حلم السيارة في المنام لابن سيرين',
+        category: 'تفسيرات شاملة',
+        excerpt: 'دليل شامل لـ 30 حالة وألوان السيارة والحالات الاجتماعية وفقاً لكبار المفسرين.',
+        icon: '🚗',
+    }
 ];
 
 const videos = [
@@ -108,7 +79,7 @@ export default function LearnPage() {
                                     </div>
                                     <h4 className="mb-sm">{article.title}</h4>
                                     <p className="text-muted text-sm mb-lg">{article.excerpt}</p>
-                                    <Link href={`/learn/${article.id}`} className="btn btn-ghost btn-sm">
+                                    <Link href={`/learn/articles/${article.id}`} className="btn btn-ghost btn-sm">
                                         اقرأ المزيد ←
                                     </Link>
                                 </article>
