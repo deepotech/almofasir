@@ -20,20 +20,18 @@ initFirebaseAdmin();
 
 function buildContextString(context: any): string {
     if (!context) return '';
-    const parts: string[] = [];
-    if (context.gender) parts.push(context.gender === 'male' ? 'الرائي ذكر' : 'الرائية أنثى');
-    if (context.socialStatus) {
-        const statusMap: Record<string, string> = {
-            'single': 'أعزب/عزباء',
-            'married': 'متزوج/متزوجة',
-            'divorced': 'مطلق/مطلقة',
-            'widowed': 'أرمل/أرملة'
-        };
-        parts.push(`الحالة الاجتماعية: ${statusMap[context.socialStatus] || context.socialStatus}`);
-    }
-    if (context.dominantFeeling) parts.push(`شعور الرائي أثناء الحلم: ${context.dominantFeeling}`);
-    if (context.isRecurring) parts.push('🔴 تنبيه: هذا الحلم متكرر عند الرائي');
-    return parts.length > 0 ? `\n\nمعلومات عن الرائي: ${parts.join('، ')}` : '';
+    const genderMap: Record<string, string> = { 'male': 'ذكر', 'female': 'أنثى' };
+    const statusMap: Record<string, string> = {
+        'single': 'أعزب/عزباء',
+        'married': 'متزوج/متزوجة',
+        'divorced': 'مطلق/مطلقة',
+        'widowed': 'أرمل/أرملة'
+    };
+    const gender = genderMap[context.gender] || 'غير محدد';
+    const status = statusMap[context.socialStatus] || (context.socialStatus || 'غير محدد');
+    const feeling = context.dominantFeeling || 'غير محدد';
+    const recurring = context.isRecurring ? 'نعم' : 'لا';
+    return `* الجنس: ${gender}\n* الحالة: ${status}\n* الشعور: ${feeling}\n* هل الحلم متكرر: ${recurring}`;
 }
 
 /**
@@ -372,15 +370,30 @@ export async function POST(req: NextRequest) {
                         await new Promise(r => setTimeout(r, 1000));
                         interpretationText = `(AI Mock) تفسير تجريبي للحلم: ${dreamText.substring(0, 20)}...`;
                     } else {
-                        const structuredInstructions = `
- يجب أن يكون تفسيرك مقسمًا بدقة إلى الأقسام التالية (استخدم العناوين بخط عريض):
- 1. **خلاصة سريعة**: (سطرين كحد أقصى يعطي المعنى المباشر)
- 2. **تفسير تفصيلي**: (شرح الرموز وترابطها)
- 3. **نصيحة أو تنبيه**: (توجيه عملي للرائي بناءً على الحلم)
- 
- خاطب الرائي بصيغة: ${order.context?.gender === 'female' ? 'أنثى' : 'ذكر'}.
- ديانة: إسلامي.
- `;
+                        const systemPrompt = `أنت مفسر أحلام خبير يجمع بين منهج ابن سيرين والتحليل النفسي.
+مهمتك: تفسير الحلم بدقة وبشكل مخصص، وليس عام.
+
+📌 التعليمات:
+* استخرج أهم 3-5 رموز فقط
+* حلل الرموز ثم اربطها معًا
+* اربط التفسير بحالة الرائي
+* لا تستخدم تفسيرات عامة أو مكررة
+* خاطب المستخدم مباشرة
+
+⚠️ إذا كان الحلم غير واضح، اطلب تفاصيل بدل التفسير
+
+🎯 أجب بهذا الشكل:
+
+✨ الخلاصة:
+(سطرين)
+
+🔍 التفسير:
+(تحليل مترابط)
+
+💡 النصيحة:
+(توجيه عملي)
+
+⚠️ لا تتجاوز 120 كلمة`;
                         let aiSuccess = false;
                         let retries = 0;
                         while (retries <= 2 && !aiSuccess) {
@@ -399,8 +412,8 @@ export async function POST(req: NextRequest) {
                                     body: JSON.stringify({
                                         model: "openai/gpt-4o-mini",
                                         messages: [
-                                            { role: "system", content: selectedInterpreter.systemPrompt + contextString + structuredInstructions },
-                                            { role: "user", content: `حلمي: ${dreamText}` }
+                                            { role: "system", content: systemPrompt },
+                                            { role: "user", content: `معلومات الرائي:\n${contextString}\n\nالحلم:\n${dreamText}` }
                                         ]
                                     })
                                 });

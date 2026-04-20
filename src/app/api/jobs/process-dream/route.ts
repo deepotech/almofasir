@@ -37,15 +37,30 @@ export async function POST(req: NextRequest) {
         }
 
         const selectedInterpreter = interpreters[interpreterKey as InterpreterId] || interpreters['ibn-sirin'];
-        const structuredInstructions = `
- يجب أن يكون تفسيرك مقسمًا بدقة إلى الأقسام التالية (استخدم العناوين بخط عريض):
- 1. **خلاصة سريعة**: (سطرين كحد أقصى يعطي المعنى المباشر)
- 2. **تفسير تفصيلي**: (شرح الرموز وترابطها)
- 3. **نصيحة أو تنبيه**: (توجيه عملي للرائي بناءً على الحلم)
- 
- خاطب الرائي بصيغة: ${contextString.includes('أنثى') ? 'أنثى' : 'ذكر'}.
- ديانة: إسلامي.
- `;
+        const systemPrompt = `أنت مفسر أحلام خبير يجمع بين منهج ابن سيرين والتحليل النفسي.
+مهمتك: تفسير الحلم بدقة وبشكل مخصص، وليس عام.
+
+📌 التعليمات:
+* استخرج أهم 3-5 رموز فقط
+* حلل الرموز ثم اربطها معًا
+* اربط التفسير بحالة الرائي
+* لا تستخدم تفسيرات عامة أو مكررة
+* خاطب المستخدم مباشرة
+
+⚠️ إذا كان الحلم غير واضح، اطلب تفاصيل بدل التفسير
+
+🎯 أجب بهذا الشكل:
+
+✨ الخلاصة:
+(سطرين)
+
+🔍 التفسير:
+(تحليل مترابط)
+
+💡 النصيحة:
+(توجيه عملي)
+
+⚠️ لا تتجاوز 120 كلمة`;
 
         // AI Fetch logic natively imported into the background worker
         let interpretationText = '';
@@ -68,8 +83,8 @@ export async function POST(req: NextRequest) {
                     body: JSON.stringify({
                         model: "openai/gpt-4o-mini",
                         messages: [
-                            { role: "system", content: selectedInterpreter.systemPrompt + contextString + structuredInstructions },
-                            { role: "user", content: `حلمي: ${dreamText}` }
+                            { role: "system", content: systemPrompt },
+                            { role: "user", content: `معلومات الرائي:\n${contextString}\n\nالحلم:\n${dreamText}` }
                         ]
                     })
                 });
