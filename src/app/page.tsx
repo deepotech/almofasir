@@ -30,6 +30,8 @@ import Toast, { ToastType } from '@/components/ui/Toast';
 import LiveCounter from '@/components/ui/LiveCounter';
 import FAQSection from '@/components/home/FAQSection';
 import SEOIntro from '@/components/home/SEOIntro';
+import AnalyzingScreen from '@/components/home/AnalyzingScreen';
+import ResultActions from '@/components/home/ResultActions';
 
 // Map combined status to gender + socialStatus
 function mapCombinedStatus(val: string): { gender: string; socialStatus: string } {
@@ -632,10 +634,13 @@ function HomeContent() {
             </div>
             {/* ══ END FORM ══ */}
 
+            {/* Analyzing Screen — WOW Loading */}
+            <AnalyzingScreen isVisible={isAnalyzing} />
+
             {/* AI Result */}
-            {result && (
+            {result && !isAnalyzing && (
               <div ref={resultRef} className="glass-card mt-10 animate-fadeIn relative">
-                <h3 className="text-center mb-6">🔮 التفسير</h3>
+                <h3 className="text-center mb-2">🔮 التفسير</h3>
 
                 {selectedInterpreter && (
                   <div className="text-center mb-6">
@@ -650,20 +655,14 @@ function HomeContent() {
                   </div>
                 )}
 
-                <div className="flex justify-center gap-6 mb-8" style={{ flexWrap: 'wrap' }}>
-                  {result.symbols.map((symbol, idx) => (
-                    <div key={idx} className="symbol-card" style={{ minWidth: 120 }}>
-                      <div className="symbol-icon">{symbol.icon}</div>
-                      <div className="symbol-name">{symbol.name}</div>
-                    </div>
-                  ))}
-                </div>
-
                 <div className="mb-6">
-                  <InterpretationDisplay interpretation={result.initialInterpretation} />
+                  <InterpretationDisplay
+                    interpretation={result.initialInterpretation}
+                    symbols={result.symbols}
+                  />
                 </div>
 
-                <div className="flex justify-center gap-4" style={{ flexWrap: 'wrap' }}>
+                <div className="flex justify-center gap-4 mt-2" style={{ flexWrap: 'wrap' }}>
                   {result.suggestions.map((suggestion, idx) => (
                     <span key={idx} className="tag" style={{ fontSize: 'var(--text-sm)', padding: '0.5rem 1rem' }}>
                       {suggestion}
@@ -673,39 +672,35 @@ function HomeContent() {
 
                 {/* Share Action */}
                 {currentDreamId && (
-                  <div className="mt-8 pt-6 border-t border-[var(--color-border)] text-center">
-                    <p className="text-gray-400 mb-4 text-sm">هل أعجبك التفسير؟ ساهم في إثراء المحتوى العربي</p>
+                  <div className="mt-6 pt-4 border-t border-[var(--color-border)] text-center">
                     <button
                       onClick={() => setShowShareModal(true)}
-                      className="btn btn-outline btn-lg gap-2 group hover:bg-[var(--color-primary)] hover:border-[var(--color-primary)] w-full sm:w-auto"
+                      className="btn btn-outline gap-2 group hover:bg-[var(--color-primary)] hover:border-[var(--color-primary)]"
                     >
                       <span>📤</span>
-                      <span>مشاركة الحلم مع المجتمع</span>
+                      <span>شارك مع المجتمع</span>
                     </button>
-                    <p className="text-xs text-gray-500 mt-2">سيتم نشره بشكل مجهول للحفاظ على خصوصيتك</p>
                   </div>
                 )}
 
-                {/* Upsell after result */}
-                {showUpgrade && (
-                  <div className="mt-8 pt-6 border-t border-[var(--color-border)]">
-                    <p className="text-center text-sm text-gray-400 mb-4">✨ هل تريد تفسيراً أعمق وأكثر شمولاً؟</p>
-                    <div className="flex gap-3 flex-col sm:flex-row">
-                      <button
-                        className="btn btn-primary flex-1"
-                        onClick={() => router.push('/experts')}
-                      >
-                        👨‍🏫 احصل على تفسير من مفسر معتمد
-                      </button>
-                      <button
-                        className="btn btn-outline flex-1"
-                        onClick={() => router.push('/pricing')}
-                      >
-                        📋 تقرير تفسيري مفصل
-                      </button>
-                    </div>
-                  </div>
-                )}
+                {/* Result Actions (Retention + Upsell) */}
+                <ResultActions
+                  dreamId={currentDreamId}
+                  dreamText={dreamText}
+                  interpretation={result.initialInterpretation}
+                  isLoggedIn={!!user}
+                  onInterpretAnother={() => {
+                    setResult(null);
+                    setDreamText('');
+                    setShowUpgrade(false);
+                    document.getElementById('dream-input-section')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  onSave={() => {
+                    if (currentDreamId) {
+                      showToast('✅ تم حفظ الحلم في سجلك', 'success');
+                    }
+                  }}
+                />
               </div>
             )}
 

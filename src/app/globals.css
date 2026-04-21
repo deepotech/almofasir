@@ -2387,3 +2387,387 @@ select:disabled {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ============================================
+   AnalyzingScreen — WOW Loading Experience
+   ============================================ */
+.analyzing-screen {
+  position: relative;
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 3rem 2rem;
+  background: linear-gradient(145deg, rgba(124, 58, 237, 0.08), rgba(99, 102, 241, 0.04));
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  border-radius: 1.5rem;
+  overflow: hidden;
+  text-align: center;
+}
+
+.analyzing-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.analyzing-orb-1 {
+  width: 250px;
+  height: 250px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.25) 0%, transparent 70%);
+  top: -60px;
+  right: -60px;
+  animation: orb-float 6s ease-in-out infinite;
+}
+
+.analyzing-orb-2 {
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.15) 0%, transparent 70%);
+  bottom: -40px;
+  left: -40px;
+  animation: orb-float 8s ease-in-out infinite reverse;
+}
+
+@keyframes orb-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(20px, -20px) scale(1.1); }
+}
+
+.analyzing-icon-wrap {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.analyzing-icon-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: linear-gradient(135deg, rgba(124,58,237,0.8), rgba(245,158,11,0.6)) border-box;
+  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  animation: ring-spin 3s linear infinite;
+}
+
+@keyframes ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+.analyzing-icon-core {
+  font-size: 2.5rem;
+  z-index: 1;
+  animation: icon-pulse 2s ease-in-out infinite;
+}
+
+@keyframes icon-pulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(124,58,237,0.5)); }
+  50% { transform: scale(1.12); filter: drop-shadow(0 0 20px rgba(124,58,237,0.9)); }
+}
+
+.analyzing-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 1;
+}
+
+.analyzing-step-icon {
+  font-size: 1.5rem;
+}
+
+.analyzing-step-label {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: 0.01em;
+}
+
+.analyzing-dots {
+  display: flex;
+  gap: 0.5rem;
+  z-index: 1;
+}
+
+.analyzing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  transition: background 0.3s;
+}
+
+.analyzing-dot-active {
+  background: var(--color-primary);
+  box-shadow: 0 0 8px rgba(124,58,237,0.6);
+}
+
+.analyzing-progress-track {
+  width: 85%;
+  max-width: 340px;
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.analyzing-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  transition: width 0.1s linear;
+  box-shadow: 0 0 12px rgba(124,58,237,0.5);
+}
+
+.analyzing-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  z-index: 1;
+}
+
+/* ============================================
+   ResultActions — Retention + Upsell
+   ============================================ */
+.result-actions-wrap {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.result-upsell-banner {
+  background: linear-gradient(135deg, rgba(124,58,237,0.12), rgba(245,158,11,0.08));
+  border: 1px solid rgba(124,58,237,0.3);
+  border-radius: 1rem;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+@media (min-width: 640px) {
+  .result-upsell-banner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.result-upsell-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.result-upsell-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.result-upsell-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--color-text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.result-upsell-desc {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+.result-upsell-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.result-upsell-cta {
+  white-space: nowrap;
+  font-size: 0.9rem !important;
+  padding: 0.6rem 1.2rem !important;
+}
+
+.result-upsell-cta-secondary {
+  white-space: nowrap;
+  font-size: 0.85rem !important;
+  padding: 0.55rem 1rem !important;
+}
+
+/* Retention row */
+.result-retention-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.result-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.8rem 1.25rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.875rem;
+  cursor: pointer;
+  font-family: var(--font-arabic);
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  transition: all 0.25s ease;
+  min-width: 90px;
+}
+
+.result-action-btn:hover {
+  background: rgba(124, 58, 237, 0.12);
+  border-color: rgba(124,58,237,0.4);
+  color: var(--color-text-primary);
+  transform: translateY(-2px);
+}
+
+.result-action-icon {
+  font-size: 1.4rem;
+}
+
+.result-action-whatsapp:hover {
+  background: rgba(37,211,102,0.1);
+  border-color: rgba(37,211,102,0.35);
+}
+
+.result-action-another {
+  background: linear-gradient(135deg, rgba(124,58,237,0.1), rgba(99,102,241,0.08));
+  border-color: rgba(124,58,237,0.25);
+  color: var(--color-primary-light);
+}
+
+.result-action-another:hover {
+  background: linear-gradient(135deg, rgba(124,58,237,0.2), rgba(99,102,241,0.15));
+}
+
+/* Loop hook */
+.result-loop-hook {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.result-loop-link {
+  background: none;
+  border: none;
+  color: var(--color-primary-light);
+  cursor: pointer;
+  font-family: var(--font-arabic);
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+
+.result-loop-link:hover {
+  color: var(--color-secondary);
+}
+
+/* ============================================
+   InterpretationDisplay — Confidence Bar
+   ============================================ */
+.confidence-bar-wrap {
+  padding: 1rem 1.25rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 0.875rem;
+}
+
+.confidence-bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.confidence-bar-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.confidence-bar-pct {
+  font-size: 1.1rem;
+  font-weight: 800;
+  transition: color 0.5s;
+}
+
+.confidence-bar-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 0.4rem;
+}
+
+.confidence-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  box-shadow: 0 0 10px rgba(124,58,237,0.4);
+}
+
+.confidence-bar-hint {
+  font-size: 0.73rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* Symbol chips in interpretation */
+.interpretation-symbols-row {
+  padding: 1rem 1.25rem;
+  background: rgba(124,58,237,0.06);
+  border: 1px solid rgba(124,58,237,0.15);
+  border-radius: 0.875rem;
+}
+
+.interpretation-symbols-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-primary-light);
+  margin-bottom: 0.75rem;
+}
+
+.interpretation-symbols-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.interp-symbol-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(124,58,237,0.25);
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.interp-symbol-chip-icon {
+  font-size: 1rem;
+}
+
+.interp-symbol-chip-name {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
