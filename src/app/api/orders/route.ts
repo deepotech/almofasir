@@ -10,29 +10,12 @@ import { interpreters, InterpreterId } from '@/lib/interpreters';
 import { verifyRateLimit } from '@/lib/ratelimit';
 import { dispatchToQStash, hasQstashConfig } from '@/lib/qstash';
 import { logger } from '@/lib/logger';
-
 import { validateAccess } from '@/lib/accessControl';
+import { interpretDream, buildContextString } from '@/lib/dreamInterpreter';
 
 initFirebaseAdmin();
 
-// ... existing code ...
 
-
-function buildContextString(context: any): string {
-    if (!context) return '';
-    const genderMap: Record<string, string> = { 'male': 'ذكر', 'female': 'أنثى' };
-    const statusMap: Record<string, string> = {
-        'single': 'أعزب/عزباء',
-        'married': 'متزوج/متزوجة',
-        'divorced': 'مطلق/مطلقة',
-        'widowed': 'أرمل/أرملة'
-    };
-    const gender = genderMap[context.gender] || 'غير محدد';
-    const status = statusMap[context.socialStatus] || (context.socialStatus || 'غير محدد');
-    const feeling = context.dominantFeeling || 'غير محدد';
-    const recurring = context.isRecurring ? 'نعم' : 'لا';
-    return `* الجنس: ${gender}\n* الحالة: ${status}\n* الشعور: ${feeling}\n* هل الحلم متكرر: ${recurring}`;
-}
 
 /**
  * GET /api/orders
@@ -168,8 +151,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Invalid type. Must be AI or HUMAN.' }, { status: 400 });
         }
 
-        if (!dreamText || dreamText.trim().length < 10) {
-            return NextResponse.json({ error: 'Dream text is required (min 10 chars).' }, { status: 400 });
+        if (!dreamText || dreamText.trim().split(/\s+/).filter(Boolean).length < 15) {
+            return NextResponse.json({
+                error: 'حلمك قصير جداً. يرجى وصف الحلم بتفاصيل أكثر (15 كلمة على الأقل).',
+                code: 'DREAM_TOO_SHORT'
+            }, { status: 400 });
         }
 
         // ============================================================
@@ -345,20 +331,30 @@ export async function POST(req: NextRequest) {
 
         // B) Run AI if needed
         let interpretationText = '';
+        let responseSymbols: any[] = [];
+        let responseConfidence = 0;
+        let responseType = 'عام';
+
         if (type === 'AI') {
             try {
-                // ... AI Logic ...
-                const interpreterKey = (interpreter as InterpreterId) in interpreters ? (interpreter as InterpreterId) : 'ibn-sirin';
-                const selectedInterpreter = interpreters[interpreterKey];
+                const interpreterKey = (interpreter as InterpreterId) in interpreters
+                    ? (interpreter as InterpreterId)
+                    : 'ibn-sirin';
                 const contextString = buildContextString(order.context);
-                const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
                 let qstashDispatched = false;
 
                 if (hasQstashConfig) {
                     try {
-                        await dispatchToQStash('/api/jobs/process-dream', { orderId: order._id, dreamText, contextString, interpreterKey });
-                        interpretationText = "جاري تحليل الحلم الآن... يرجى تحديث الصفحة أو التحقق من قسم الأحلام لاحقاً.";
+                        // Pass structured context to background job
+                        await dispatchToQStash('/api/jobs/process-dream', {
+                            orderId: order._id,
+                            dreamText,
+                            context: order.context,
+                            contextString,
+                            interpreterKey,
+                        });
+                        interpretationText = 'جاري تحليل الحلم الآن... يرجى التحقق من قسم الأحلام لاحقاً.';
                         qstashDispatched = true;
                     } catch (err) {
                         logger.error('QStash failed, falling back to direct execution', { event: 'QSTASH_FALLBACK' }, err);
@@ -366,88 +362,24 @@ export async function POST(req: NextRequest) {
                 }
 
                 if (!qstashDispatched) {
-                    if (!OPENROUTER_API_KEY) {
-                        await new Promise(r => setTimeout(r, 1000));
-                        interpretationText = `(AI Mock) تفسير تجريبي للحلم: ${dreamText.substring(0, 20)}...`;
-                    } else {
-                        const systemPrompt = `أنت مفسر أحلام خبير يجمع بين منهج ابن سيرين والتحليل النفسي.
-مهمتك: تفسير الحلم بدقة وبشكل مخصص، وليس عام.
+                    // Direct interpretation using unified engine
+                    const aiResult = await interpretDream(dreamText, order.context, 1);
+                    interpretationText = aiResult.text;
+                    responseSymbols = aiResult.symbols;
+                    responseConfidence = aiResult.confidenceScore;
+                    responseType = aiResult.type;
 
-📌 التعليمات:
-* استخرج أهم 3-5 رموز فقط
-* حلل الرموز ثم اربطها معًا
-* اربط التفسير بحالة الرائي
-* لا تستخدم تفسيرات عامة أو مكررة
-* خاطب المستخدم مباشرة
-
-⚠️ إذا كان الحلم غير واضح، اطلب تفاصيل بدل التفسير
-
-🎯 أجب بهذا الشكل:
-
-✨ الخلاصة:
-(سطرين)
-
-🔍 التفسير:
-(تحليل مترابط)
-
-💡 النصيحة:
-(توجيه عملي)
-
-⚠️ لا تتجاوز 120 كلمة`;
-                        let aiSuccess = false;
-                        let retries = 0;
-                        while (retries <= 2 && !aiSuccess) {
-                            const aiController = new AbortController();
-                            const aiTimeoutId = setTimeout(() => aiController.abort(), 5000);
-                            try {
-                                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                                    method: "POST",
-                                    signal: aiController.signal,
-                                    headers: {
-                                        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                                        "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-                                        "X-Title": "Almofasser",
-                                        "Content-Type": "application/json"
-                                    },
-                                    body: JSON.stringify({
-                                        model: "openai/gpt-4o-mini",
-                                        messages: [
-                                            { role: "system", content: systemPrompt },
-                                            { role: "user", content: `معلومات الرائي:\n${contextString}\n\nالحلم:\n${dreamText}` }
-                                        ]
-                                    })
-                                });
-                                clearTimeout(aiTimeoutId);
-                                if (response.ok) {
-                                    const aiData = await response.json();
-                                    interpretationText = aiData.choices[0]?.message?.content || "No response";
-                                    aiSuccess = true;
-                                } else {
-                                    console.error(`[AI] OpenRouter returned ${response.status}`);
-                                    retries++;
-                                }
-                            } catch (fetchErr: any) {
-                                clearTimeout(aiTimeoutId);
-                                console.error('[AI] Fetch error:', fetchErr?.message);
-                                retries++;
-                            }
-                        }
-                        if (!aiSuccess) {
-                            interpretationText = "عذراً، استغرق التفسير وقتاً طويلاً أو حدث خطأ في خدمة الذكاء الاصطناعي. يرجى المحاولة مجدداً.";
-                        }
-                    }
+                    // Update order with enriched result
+                    await DreamRequest.findByIdAndUpdate(order._id, {
+                        interpretationText,
+                        status: 'completed',
+                        completedAt: new Date(),
+                    });
                 }
             } catch (e) {
-                console.error('AI Error', e);
-                interpretationText = "حدث خطأ غير متوقع أثناء التفسير.";
+                logger.error('AI interpretation error in /api/orders', { event: 'AI_ERROR' }, e);
+                interpretationText = 'حدث خطأ غير متوقع أثناء التفسير. يرجى المحاولة مجدداً.';
             }
-
-            // Update with AI result (Idempotent update)
-            await DreamRequest.findByIdAndUpdate(order._id, {
-                interpretationText,
-                status: 'completed',
-                completedAt: new Date()
-            });
         }
 
         return NextResponse.json({
@@ -455,7 +387,10 @@ export async function POST(req: NextRequest) {
             orderId: order._id,
             order: order,
             interpretation: interpretationText,
-            remainingCredits: result.user ? result.user.credits : 0
+            symbols: responseSymbols,
+            type: responseType,
+            confidenceScore: responseConfidence,
+            remainingCredits: result.user ? result.user.credits : 0,
         });
 
     } catch (error: any) {
