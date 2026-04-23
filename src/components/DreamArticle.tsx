@@ -288,7 +288,7 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
 
                 {/* ── FAQ ── */}
                 {faqs.length > 0 && (
-                    <section className="dream-faq" itemScope itemType="https://schema.org/FAQPage" aria-label="أسئلة شائعة">
+                    <section className="dream-faq" aria-label="أسئلة شائعة">
                         <h2 className="dream-section-heading">
                             <span className="dream-section-bar" aria-hidden="true" />
                             أسئلة شائعة حول الحلم
@@ -298,12 +298,9 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
                                 <details
                                     key={i}
                                     className="dream-faq-item group"
-                                    itemScope
-                                    itemType="https://schema.org/Question"
                                 >
                                     <summary
                                         className="dream-faq-question"
-                                        itemProp="name"
                                     >
                                         <span className="dream-faq-num">{i + 1}</span>
                                         <span className="dream-faq-q-text">{f.question}</span>
@@ -311,11 +308,8 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
                                     </summary>
                                     <div
                                         className="dream-faq-answer"
-                                        itemScope
-                                        itemType="https://schema.org/Answer"
-                                        itemProp="acceptedAnswer"
                                     >
-                                        <p itemProp="text" className="dream-paragraph">{f.answer}</p>
+                                        <p className="dream-paragraph">{f.answer}</p>
                                     </div>
                                 </details>
                             ))}

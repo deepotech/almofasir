@@ -56,8 +56,6 @@ function FAQAccordionItem({ faq, index }: { faq: { question: string; answer: str
 
     return (
         <div
-            itemScope
-            itemType="https://schema.org/Question"
             className="border border-[var(--color-border)] rounded-xl overflow-hidden transition-colors"
         >
             <button
@@ -66,7 +64,7 @@ function FAQAccordionItem({ faq, index }: { faq: { question: string; answer: str
                 aria-expanded={isOpen}
                 aria-controls={`faq-answer-${index}`}
             >
-                <h3 itemProp="name" className="font-bold text-[var(--color-text-primary)] text-lg leading-relaxed">
+                <h3 className="font-bold text-[var(--color-text-primary)] text-lg leading-relaxed">
                     {faq.question}
                 </h3>
                 <span
@@ -77,13 +75,9 @@ function FAQAccordionItem({ faq, index }: { faq: { question: string; answer: str
             </button>
             <div
                 id={`faq-answer-${index}`}
-                itemScope
-                itemType="https://schema.org/Answer"
-                itemProp="acceptedAnswer"
                 className={`overflow-hidden transition-all duration-300 ${isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}
             >
                 <p
-                    itemProp="text"
                     className="px-5 pb-5 text-[var(--color-text-secondary)] leading-relaxed border-t border-[var(--color-border)]/50 pt-4"
                 >
                     {faq.answer}
@@ -412,7 +406,7 @@ export default function DreamDetailsContent({ id }: { id: string }) {
 
                     {/* ── FAQ Accordion ── */}
                     {dream.publicVersion?.faqs && dream.publicVersion.faqs.length > 0 && (
-                        <section className="mb-12" itemScope itemType="https://schema.org/FAQPage">
+                        <section className="mb-12">
                             <h2 className="text-2xl font-bold mb-6 text-[var(--color-text-primary)] flex items-center gap-2">
                                 <span>❓</span>
                                 <span>أسئلة شائعة حول الحلم</span>
