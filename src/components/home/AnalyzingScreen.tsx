@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const STEPS = [
-    { icon: '🧠', label: 'استخراج الرموز من حلمك...', duration: 1000 },
-    { icon: '🔍', label: 'تحليل المعاني والإشارات...', duration: 1200 },
-    { icon: '🔗', label: 'ربط التفسير بحالتك وشعورك...', duration: 1000 },
-    { icon: '✨', label: 'التفسير جاهز!', duration: 600 },
+    { icon: '🧠', label: 'نستخرج الرموز الأساسية من حلمك...', duration: 1000 },
+    { icon: '📚', label: 'نطابق الرموز مع معجم ابن سيرين والنابلسي...', duration: 1200 },
+    { icon: '🔍', label: 'نحلل حالتك النفسية لبناء التفسير...', duration: 1000 },
+    { icon: '✨', label: 'نصيغ الخلاصة الشرعية...', duration: 600 },
 ];
 
 interface Props {
