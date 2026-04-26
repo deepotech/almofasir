@@ -9,6 +9,7 @@ import Dream from '@/models/Dream';
 import { dreamSymbols } from '@/data/symbols';
 import { generateArticleSchema, generateBreadcrumbSchema, generateDreamListSchema } from '@/lib/seo';
 import EngagementWidget from '@/components/seo/EngagementWidget';
+import MiniDreamAnalyzer from '@/components/home/MiniDreamAnalyzer';
 
 interface PageProps {
     params: Promise<{ symbol: string }>;
@@ -122,6 +123,9 @@ export default async function SymbolDetailPage({ params }: PageProps) {
                                 </div>
                             )}
                         </div>
+
+                        {/* Interactive Analyzer */}
+                        <MiniDreamAnalyzer symbolName={symbol.name} />
 
                         {/* Public Dreams (SEO Internal Linking Structure) */}
                         {relatedDreams && relatedDreams.length > 0 && (

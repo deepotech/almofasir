@@ -140,6 +140,19 @@ function HomeContent() {
     }
   }, [result]);
 
+  // Read prefilled dream text from MiniDreamAnalyzer
+  useEffect(() => {
+    const prefill = localStorage.getItem('prefill_dream_text');
+    if (prefill) {
+      setDreamText(prefill);
+      localStorage.removeItem('prefill_dream_text');
+      setTimeout(() => {
+        const inputSection = document.getElementById('dream-input-section');
+        if (inputSection) inputSection.scrollIntoView({ behavior: 'smooth' });
+      }, 500);
+    }
+  }, []);
+
   // Check for Human Interpreter Selection
   useEffect(() => {
     const action = searchParams.get('action');
