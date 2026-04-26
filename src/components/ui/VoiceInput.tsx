@@ -53,7 +53,7 @@ export default function VoiceInput({ onTextResult }: Props) {
         } else if (event.error === 'no-speech') {
            // just ignore no-speech
         } else if (event.error === 'network') {
-           setError('تأكد من اتصالك بالإنترنت');
+           setError('يتطلب اتصال آمن (HTTPS) أو إذن الميكروفون');
         } else {
            setError('حدث خطأ بالصوت');
         }
