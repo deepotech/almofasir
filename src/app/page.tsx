@@ -32,6 +32,7 @@ import FAQSection from '@/components/home/FAQSection';
 import SEOIntro from '@/components/home/SEOIntro';
 import AnalyzingScreen from '@/components/home/AnalyzingScreen';
 import ResultActions from '@/components/home/ResultActions';
+import VoiceInput from '@/components/ui/VoiceInput';
 
 // Map combined status to gender + socialStatus
 function mapCombinedStatus(val: string): { gender: string; socialStatus: string } {
@@ -133,6 +134,10 @@ function HomeContent() {
   const [isRecurring] = useState<boolean>(false);
 
   const resultRef = useRef<HTMLDivElement>(null);
+
+  const handleVoiceInput = (newText: string) => {
+    setDreamText((prev) => prev + newText);
+  };
 
   useEffect(() => {
     if (result && resultRef.current) {
@@ -493,6 +498,12 @@ function HomeContent() {
                       : {}),
                   }}
                 />
+
+                <div className="absolute left-3 bottom-3 z-10">
+                  {!isInputLocked && !isAnalyzing && (
+                    <VoiceInput onTextResult={handleVoiceInput} />
+                  )}
+                </div>
 
                 {/* Quality indicator */}
                 {!isInputLocked && dreamText.length > 0 && (

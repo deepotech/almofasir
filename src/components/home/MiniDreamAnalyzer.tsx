@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import VoiceInput from '@/components/ui/VoiceInput';
 
 interface Props {
   symbolName: string;
@@ -16,6 +17,10 @@ export default function MiniDreamAnalyzer({ symbolName }: Props) {
     // Save to localStorage so the home page can pick it up
     localStorage.setItem('prefill_dream_text', text);
     router.push('/');
+  };
+
+  const handleVoiceInput = (newText: string) => {
+    setText((prev) => prev + newText);
   };
 
   return (
@@ -41,11 +46,14 @@ export default function MiniDreamAnalyzer({ symbolName }: Props) {
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
-          {text.length > 0 && (
-             <div className="absolute left-3 bottom-7 text-xs text-green-400 font-medium">
-               ممتاز، استمر في كتابة التفاصيل...
-             </div>
-          )}
+          <div className="absolute left-3 bottom-7 flex items-center gap-3">
+            <VoiceInput onTextResult={handleVoiceInput} />
+            {text.length > 0 && (
+               <div className="text-xs text-green-400 font-medium hidden sm:block">
+                 ممتاز، استمر في كتابة التفاصيل...
+               </div>
+            )}
+          </div>
         </div>
         
         <div className="flex flex-col sm:flex-row items-center gap-4">
