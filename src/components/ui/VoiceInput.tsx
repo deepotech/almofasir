@@ -52,9 +52,14 @@ export default function VoiceInput({ onTextResult }: Props) {
           setError('يرجى السماح للميكروفون');
         } else if (event.error === 'no-speech') {
            // just ignore no-speech
+        } else if (event.error === 'network') {
+           setError('تأكد من اتصالك بالإنترنت');
         } else {
            setError('حدث خطأ بالصوت');
         }
+        
+        // Clear error after 4 seconds
+        setTimeout(() => setError(null), 4000);
       };
 
       recognition.onend = () => {
@@ -89,7 +94,7 @@ export default function VoiceInput({ onTextResult }: Props) {
   };
 
   return (
-    <div className="relative inline-flex flex-col items-center z-10">
+    <div className="relative inline-flex items-center z-10">
       <button
         onClick={toggleListen}
         type="button"
@@ -112,13 +117,13 @@ export default function VoiceInput({ onTextResult }: Props) {
       </button>
       
       {error && (
-        <span className="absolute -bottom-7 whitespace-nowrap text-[10px] text-red-400 bg-red-900/40 px-2 py-0.5 rounded backdrop-blur-sm">
+        <span className="absolute left-full ml-3 top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] text-red-400 bg-red-900/40 px-2 py-0.5 rounded backdrop-blur-sm">
           {error}
         </span>
       )}
       
       {isListening && !error && (
-        <span className="absolute -bottom-7 whitespace-nowrap text-[10px] text-red-400 font-medium animate-pulse">
+        <span className="absolute left-full ml-3 top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] text-red-400 font-medium animate-pulse">
           تحدث الآن...
         </span>
       )}

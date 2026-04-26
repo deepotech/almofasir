@@ -478,7 +478,7 @@ function HomeContent() {
               <div className="relative mb-4" suppressHydrationWarning>
                 <textarea
                   id="dream-textarea"
-                  className="textarea cro-textarea"
+                  className="textarea cro-textarea pb-14"
                   placeholder={
                     isInputLocked && !user
                       ? 'لقد استخدمت التفسير المجاني. يرجى تسجيل الدخول للمتابعة.'
