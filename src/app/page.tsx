@@ -33,6 +33,7 @@ import SEOIntro from '@/components/home/SEOIntro';
 import AnalyzingScreen from '@/components/home/AnalyzingScreen';
 import ResultActions from '@/components/home/ResultActions';
 import VoiceInput from '@/components/ui/VoiceInput';
+import RecentDreamsFeed from '@/components/home/RecentDreamsFeed';
 
 // Map combined status to gender + socialStatus
 function mapCombinedStatus(val: string): { gender: string; socialStatus: string } {
@@ -439,9 +440,9 @@ function HomeContent() {
                 </>
               ) : (
                 <>
-                  <span className="text-gradient">🌙 دليلك الصادق</span>
+                  <span className="text-gradient">المفسر: موقع تفسير الأحلام</span>
                   <br />
-                  <span className="text-white">لتفسير الرؤى والأحلام</span>
+                  <span className="text-white">مجاناً بالذكاء الاصطناعي</span>
                 </>
               )}
             </h1>
@@ -459,7 +460,7 @@ function HomeContent() {
                 }}
                 suppressHydrationWarning
               >
-                اكتب حلمك الآن بطريقتك، وسنقوم باستخراج رموزه الدقيقة وفق منهج <strong>ابن سيرين والنابلسي</strong> في ضوء الكتاب والسنة.
+                مفسر احلام ذكي وفوري. اكتب حلمك الآن بطريقتك، وسنقوم باستخراج رموزه الدقيقة وفق منهج <strong>ابن سيرين والنابلسي</strong> في ضوء الكتاب والسنة.
                 <br/>
                 <span className="text-xs mt-2 inline-block text-gray-500">(سرية تامة • بدون تسجيل • إجابة فورية)</span>
               </p>
@@ -870,6 +871,11 @@ function HomeContent() {
             </div>
           </div>
         </section>
+
+        {/* ══════════════════════════════════════
+            RECENT DREAMS (INTERNAL LINKING)
+            ══════════════════════════════════════ */}
+        <RecentDreamsFeed />
 
         {/* ══════════════════════════════════════
             SEO INTRO
