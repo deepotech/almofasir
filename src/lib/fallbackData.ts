@@ -39,14 +39,15 @@ export const fallbackDreams = [
 ];
 
 export const fallbackDreamDetails = {
-    _id: 'fallback-dream-1',
-    seoSlug: 'tafsir-halm-al-bahr-123456',
+    id: 'fallback-dream-1',
+    seo_slug: 'tafsir-halm-al-bahr-123456',
     title: 'تفسير رؤية البحر في المنام (نسخة مؤرشفة)',
     content: 'هذه نسخة مؤرشفة ومثبتة من تفسير رؤية البحر في المنام بسبب ضغط مؤقت على الخوادم.',
     mood: 'happy',
     tags: ['البحر', 'السكينة'],
-    visibilityStatus: 'public',
-    publicVersion: {
+    visibility_status: 'public',
+    created_at: new Date().toISOString(),
+    public_version: {
         title: 'تفسير حلم رؤية البحر الهادئ',
         content: 'هذه نسخة محفوظة ومؤقتة تعمل حينما تكون هناك صيانة للسيرفرات أو ضغط عالي.',
         seoIntro: 'البحر من الرموز العظيمة في المنام وتدل على سعة الرزق والاستقرار النفسي.',

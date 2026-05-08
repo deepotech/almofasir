@@ -44,11 +44,35 @@ async function getDream(slugOrId: string) {
             if (byId) return byId;
         }
 
-        return null;
     } catch (e: any) {
         console.error('[Supabase] getDream error:', e?.message);
-        return null;
     }
+    
+    // 3. Fallback Data Check (When DB is down or fallback links are clicked)
+    const isFallback = fallbackDreams.find(d => d.slug === slugOrId || d.id === slugOrId);
+    if (isFallback) {
+        return {
+            ...fallbackDreamDetails,
+            id: isFallback.id,
+            seo_slug: isFallback.slug,
+            tags: isFallback.tags,
+            mood: isFallback.mood,
+            public_version: {
+                ...fallbackDreamDetails.public_version,
+                title: isFallback.title,
+                content: isFallback.content,
+                seoIntro: isFallback.content,
+                comprehensiveInterpretation: {
+                    ...fallbackDreamDetails.public_version.comprehensiveInterpretation,
+                    h1: isFallback.title,
+                    metaTitle: isFallback.title,
+                    metaDescription: isFallback.interpretation
+                }
+            }
+        };
+    }
+    
+    return null;
 }
 
 /**
@@ -123,7 +147,8 @@ export async function generateMetadata({
     params: Promise<{ dreamSlug: string }>;
 }): Promise<Metadata> {
     const { dreamSlug } = await params;
-    const dream = await getDream(decodeURIComponent(dreamSlug));
+    const decodedSlug = decodeURIComponent(dreamSlug);
+    const dream = await getDream(decodedSlug);
 
     if (!dream) {
         return {
