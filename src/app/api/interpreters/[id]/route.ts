@@ -1,43 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import Interpreter from '@/models/Interpreter';
+import { supabaseAdmin } from '@/lib/supabase';
 
-// GET /api/interpreters/[id] - Get single interpreter details
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        await dbConnect();
-
         const { id } = await params;
 
-        const interpreter = await Interpreter.findById(id)
-            .select('-earnings -pendingEarnings -userId')
-            .lean();
+        const { data: interpreter, error } = await supabaseAdmin
+            .from('interpreters')
+            .select('*')
+            .eq('id', id)
+            .single();
 
-        if (!interpreter) {
-            return NextResponse.json(
-                { error: 'Interpreter not found' },
-                { status: 404 }
-            );
+        if (error || !interpreter) {
+            return NextResponse.json({ error: 'Interpreter not found' }, { status: 404 });
         }
 
-        // Format response
         const formatted = {
-            id: interpreter._id,
-            displayName: interpreter.displayName,
+            id: interpreter.id,
+            displayName: interpreter.display_name,
             avatar: interpreter.avatar,
             bio: interpreter.bio,
-            interpretationType: interpreter.interpretationType,
-            interpretationTypeAr: getTypeArabic(interpreter.interpretationType),
+            interpretationType: interpreter.interpretation_type,
+            interpretationTypeAr: getTypeArabic(interpreter.interpretation_type),
             price: interpreter.price,
-            responseTime: interpreter.responseTime,
-            responseTimeText: getResponseTimeText(interpreter.responseTime),
+            responseTime: interpreter.response_time,
+            responseTimeText: getResponseTimeText(interpreter.response_time),
             rating: interpreter.rating,
-            totalRatings: interpreter.totalRatings,
-            completedDreams: interpreter.completedDreams,
-            isActive: interpreter.isActive,
+            totalRatings: interpreter.total_ratings,
+            completedDreams: interpreter.completed_dreams,
+            isActive: interpreter.is_active,
             status: interpreter.status
         };
 
@@ -45,14 +39,10 @@ export async function GET(
 
     } catch (error) {
         console.error('Error fetching interpreter:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch interpreter' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to fetch interpreter' }, { status: 500 });
     }
 }
 
-// Helper functions
 function getTypeArabic(type: string): string {
     const types: Record<string, string> = {
         'religious': 'شرعي',

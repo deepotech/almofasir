@@ -1,8 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-import Interpreter from '@/models/Interpreter';
-import { getSettings } from '@/models/PlatformSettings';
+import { NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken, initFirebaseAdmin } from '@/lib/firebase-admin';
 
 initFirebaseAdmin();
@@ -10,19 +7,15 @@ initFirebaseAdmin();
 // Dummy Notification Function - Replace with real implementation later
 async function sendNotification(userId: string, title: string, message: string) {
     console.log(`[Notification] To User ${userId}: ${title} - ${message}`);
-    // Check if Notification model exists and save it
     try {
-        const { default: Notification } = await import('@/models/Notification');
-        if (Notification) {
-            await Notification.create({
-                userId,
-                title,
-                message,
-                type: 'interpretation_completed',
-                read: false,
-                createdAt: new Date()
-            });
-        }
+        await supabaseAdmin.from('notifications').insert({
+            user_id: userId,
+            title,
+            message,
+            type: 'interpretation_completed',
+            read: false,
+            created_at: new Date().toISOString()
+        });
     } catch (e) {
         console.warn('Notification model not found or error:', e);
     }
@@ -34,22 +27,14 @@ export async function POST(
 ) {
     try {
         const { id } = await params;
-        await dbConnect();
 
         const authHeader = request.headers.get('Authorization');
-        if (!authHeader?.startsWith('Bearer ')) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        if (!authHeader?.startsWith('Bearer ')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const token = authHeader.split('Bearer ')[1];
         let userId: string;
-
-        try {
-            const decodedToken = await verifyIdToken(token);
-            userId = decodedToken.uid;
-        } catch (authError) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        try { userId = (await verifyIdToken(token)).uid; } 
+        catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
 
         const body = await request.json();
         const { interpretationText } = body;
@@ -58,81 +43,55 @@ export async function POST(
             return NextResponse.json({ error: 'يجب أن يكون التفسير 50 حرفاً على الأقل' }, { status: 400 });
         }
 
-        // Verify Interpreter
-        const interpreter = await Interpreter.findOne({ userId });
-        if (!interpreter || interpreter.status === 'suspended') {
-            return NextResponse.json({ error: 'Interpreter not active' }, { status: 403 });
-        }
+        const { data: interpreter } = await supabaseAdmin.from('interpreters').select('status, display_name').eq('user_id', userId).single();
+        if (!interpreter || interpreter.status === 'suspended') return NextResponse.json({ error: 'Interpreter not active' }, { status: 403 });
 
-        // Find Request
-        const dreamRequest = await DreamRequest.findById(id);
-        if (!dreamRequest) {
-            return NextResponse.json({ error: 'Request not found' }, { status: 404 });
-        }
+        const { data: dreamRequest } = await supabaseAdmin.from('dream_requests').select('*').eq('id', id).single();
+        if (!dreamRequest) return NextResponse.json({ error: 'Request not found' }, { status: 404 });
+        if (dreamRequest.interpreter_user_id !== userId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
 
-        if (dreamRequest.interpreterUserId !== userId) {
-            return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
-        }
-
-        // STRICT STATUS CHECK: Must be 'in_progress' to complete
-        // Transition: in_progress -> completed
         if (dreamRequest.status !== 'in_progress') {
-            // Allow retry if already completed (network issues), but don't re-process money
-            if (dreamRequest.status === 'completed') {
-                return NextResponse.json({ message: 'Already completed', status: 'completed' });
-            }
+            if (dreamRequest.status === 'completed') return NextResponse.json({ message: 'Already completed', status: 'completed' });
             return NextResponse.json({ error: 'Request must be In Progress before completion. Please start it first.' }, { status: 400 });
         }
 
-        // Financial Logic
-        const settings = await getSettings();
-        const lockedPrice = dreamRequest.lockedPrice; // BINDING: Use locked price
-        const platformCommission = lockedPrice * settings.commissionRate;
+        const { data: settings } = await supabaseAdmin.from('platform_settings').select('commission_rate').single();
+        const commissionRate = settings?.commission_rate || 0.3;
+
+        const lockedPrice = dreamRequest.locked_price;
+        const platformCommission = lockedPrice * commissionRate;
         const interpreterEarning = lockedPrice - platformCommission;
 
-        // 1. Create Transaction (The Truth)
-        const { default: Transaction } = await import('@/models/Transaction');
-        await Transaction.create({
-            userId: userId,
+        // Create transaction
+        await supabaseAdmin.from('transactions').insert({
+            user_id: userId,
             amount: interpreterEarning,
             currency: dreamRequest.currency || 'USD',
             type: 'earning',
             status: 'completed',
-            description: `Interpretation for request #${dreamRequest._id}`,
-            referenceId: dreamRequest._id.toString(),
-            metadata: {
-                dreamId: dreamRequest._id,
-                originalPrice: lockedPrice,
-                commission: platformCommission
-            }
+            description: `Interpretation for request #${dreamRequest.id}`,
+            related_entity_id: dreamRequest.id,
+            related_entity_type: 'dream_requests'
         });
 
-        // 2. Update Request
-        const updatedRequest = await DreamRequest.findByIdAndUpdate(
-            id,
-            {
-                interpretationText: interpretationText.trim(),
-                status: 'completed',
-                completedAt: new Date(),
-                platformCommission,
-                interpreterEarning,
-                paymentStatus: 'released' // Mark funds as released to interpreter
-            },
-            { new: true }
-        );
-
-        // 3. Send Notification to User
-        await sendNotification(
-            dreamRequest.userId,
-            'تم تفسير حلمك! ✨',
-            `قام المفسر ${interpreter.displayName} بالرد على حلمك.`
-        );
-
-        return NextResponse.json({
-            success: true,
+        // Update Request
+        await supabaseAdmin.from('dream_requests').update({
+            interpretation_text: interpretationText.trim(),
             status: 'completed',
-            message: 'Interpretation submitted successfully'
-        });
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            platform_commission: platformCommission,
+            interpreter_earning: interpreterEarning,
+            payment_status: 'released'
+        }).eq('id', id);
+
+        await sendNotification(
+            dreamRequest.user_id,
+            'تم تفسير حلمك! ✨',
+            `قام المفسر ${interpreter.display_name} بالرد على حلمك.`
+        );
+
+        return NextResponse.json({ success: true, status: 'completed', message: 'Interpretation submitted successfully' });
 
     } catch (error) {
         console.error('Error submitting interpretation:', error);

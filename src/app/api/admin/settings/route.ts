@@ -1,9 +1,7 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/adminAuth';
-import PlatformSettings, { getSettings } from '@/models/PlatformSettings';
-import AuditLog from '@/models/AuditLog';
-import dbConnect from '@/lib/mongodb';
+import { supabaseAdmin } from '@/lib/supabase';
+import { getSettings, updateSettings } from '@/lib/platformSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +10,6 @@ export async function GET(req: NextRequest) {
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
         const settings = await getSettings();
         return NextResponse.json({ settings });
     } catch (error) {
@@ -26,38 +23,32 @@ export async function PATCH(req: NextRequest) {
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
         const updates = await req.json();
 
-        const settings = await getSettings();
-        const oldSettings = settings.toObject();
-
-        // Apply updates
-        Object.assign(settings, updates);
-        settings.updatedBy = auth.admin.email;
-        await settings.save();
+        const oldSettings = await getSettings();
+        const settings = await updateSettings(updates, auth.admin.email);
 
         // Audit Log
-        await AuditLog.create({
-            adminUserId: auth.admin._id,
-            adminEmail: auth.admin.email,
+        await supabaseAdmin.from('audit_logs').insert({
+            admin_user_id: auth.admin.id,
+            admin_email: auth.admin.email,
             action: 'update_settings',
-            targetType: 'settings',
-            targetId: settings._id,
+            target_type: 'settings',
+            target_id: oldSettings.id ?? 'singleton',
             details: {
                 changes: updates,
                 diff: Object.keys(updates).reduce((acc: any, key) => {
-                    if (oldSettings[key] !== updates[key]) {
-                        acc[key] = { from: oldSettings[key], to: updates[key] };
+                    const oldVal = (oldSettings as any)[key];
+                    if (oldVal !== updates[key]) {
+                        acc[key] = { from: oldVal, to: updates[key] };
                     }
                     return acc;
-                }, {})
+                }, {}),
             },
-            ipAddress: req.headers.get('x-forwarded-for')
+            ip_address: req.headers.get('x-forwarded-for'),
         });
 
         return NextResponse.json({ settings });
-
     } catch (error) {
         console.error('Update settings error:', error);
         return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });

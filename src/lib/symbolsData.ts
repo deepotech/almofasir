@@ -1,5 +1,4 @@
-import dbConnect from '@/lib/mongodb';
-import SymbolModel from '@/models/Symbol';
+import { supabaseAdmin } from '@/lib/supabase';
 import { dreamSymbols as staticSymbols } from '@/data/symbols';
 
 export type UnifiedSymbol = {
@@ -23,8 +22,12 @@ export type UnifiedSymbol = {
 
 export async function getSymbolData(slug: string): Promise<UnifiedSymbol | null> {
     try {
-        await dbConnect();
-        const dbSymbol = await SymbolModel.findOne({ slug }).lean() as any;
+        const { data: dbSymbol } = await supabaseAdmin
+            .from('symbols')
+            .select('*')
+            .eq('slug', slug)
+            .single();
+
         if (dbSymbol) {
             return {
                 id: dbSymbol.slug,
@@ -38,17 +41,17 @@ export async function getSymbolData(slug: string): Promise<UnifiedSymbol | null>
                     nabulsi: dbSymbol.interpretations?.nabulsi || '',
                     psychological: dbSymbol.interpretations?.psychological || '',
                 },
-                relatedSymbols: dbSymbol.relatedSymbols || []
+                relatedSymbols: dbSymbol.related_symbols || []
             };
         }
     } catch (e) {
-        console.warn('DB Symbol fetch failed, falling back to static:', e);
+        console.warn('[Supabase] Symbol fetch failed, falling back to static:', e);
     }
-    
-    // Fallback
+
+    // Static data fallback
     const staticData = staticSymbols.find(s => s.id === slug);
     if (!staticData) return null;
-    
+
     return {
         id: staticData.id,
         name: staticData.name,
@@ -56,7 +59,6 @@ export async function getSymbolData(slug: string): Promise<UnifiedSymbol | null>
         category: staticData.category,
         aliases: staticData.relatedSymbols || [],
         interpretations: {
-             // Map static properties to unified schema
             general: staticData.interpretations.general,
             forMarried: staticData.interpretations.forMarried,
             forSingle: staticData.interpretations.forSingle,
@@ -72,10 +74,13 @@ export async function getSymbolData(slug: string): Promise<UnifiedSymbol | null>
 
 export async function getAllSymbols(): Promise<UnifiedSymbol[]> {
     try {
-        await dbConnect();
-        const dbSymbols = await SymbolModel.find().lean() as any[];
+        const { data: dbSymbols } = await supabaseAdmin
+            .from('symbols')
+            .select('*')
+            .order('name');
+
         if (dbSymbols && dbSymbols.length > 0) {
-            return dbSymbols.map(dbSymbol => ({
+            return dbSymbols.map((dbSymbol: any) => ({
                 id: dbSymbol.slug,
                 name: dbSymbol.name,
                 icon: dbSymbol.icon || '💭',
@@ -87,13 +92,14 @@ export async function getAllSymbols(): Promise<UnifiedSymbol[]> {
                     nabulsi: dbSymbol.interpretations?.nabulsi || '',
                     psychological: dbSymbol.interpretations?.psychological || '',
                 },
-                relatedSymbols: dbSymbol.relatedSymbols || []
+                relatedSymbols: dbSymbol.related_symbols || []
             }));
         }
-    } catch(e) {
-        console.warn('DB Symbol list fetch failed, falling back to static:', e);
+    } catch (e) {
+        console.warn('[Supabase] Symbol list fetch failed, falling back to static:', e);
     }
-    
+
+    // Static data fallback
     return staticSymbols.map(s => ({
         id: s.id,
         name: s.name,

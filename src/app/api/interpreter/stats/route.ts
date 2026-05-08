@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken, initFirebaseAdmin } from '@/lib/firebase-admin';
 
 initFirebaseAdmin();
@@ -9,9 +8,6 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
     try {
-        await dbConnect();
-
-        // 1. Auth Check
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -19,79 +15,41 @@ export async function GET(req: NextRequest) {
 
         const token = authHeader.split('Bearer ')[1];
         let userId: string;
-
         try {
-            const decodedToken = await verifyIdToken(token);
-            userId = decodedToken.uid;
-        } catch (authError) {
-            console.error('Auth verify failed:', authError);
+            const decoded = await verifyIdToken(token);
+            userId = decoded.uid;
+        } catch {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // 2. Aggregate Stats strictly from DreamRequest (The Truth)
-        // We only count earnings where:
-        // - status is 'completed' or 'closed' (assuming closed means finalized/paid)
-        // - paymentStatus is 'released' (or 'paid' if we are lenient, but 'released' is safer for interpreter view)
-        // User requested: "Earnings = sum of prices of completed requests only"
+        // Aggregate interpreter stats from dream_requests table
+        const { data: allRequests, error } = await supabaseAdmin
+            .from('dream_requests')
+            .select('status, interpreter_earning, payment_status')
+            .eq('interpreter_user_id', userId);
 
-        const stats = await DreamRequest.aggregate([
-            {
-                $match: {
-                    interpreterUserId: userId // Match requests for this interpreter
-                }
-            },
-            {
-                $group: {
-                    _id: null,
-                    // Total Earnings: Sum of interpreterEarning for completed requests
-                    totalEarnings: {
-                        $sum: {
-                            $cond: [
-                                {
-                                    $and: [
-                                        { $in: ["$status", ["completed", "closed"]] },
-                                        // We can enforce paymentStatus == 'released' here if stric
-                                        // For now, let's stick to status=completed as requested
-                                    ]
-                                },
-                                "$interpreterEarning", // Use the calculated earning stored in the request
-                                0
-                            ]
-                        }
-                    },
-                    // Count by Status
-                    completedRequests: {
-                        $sum: {
-                            $cond: [{ $in: ["$status", ["completed", "closed"]] }, 1, 0]
-                        }
-                    },
-                    pendingRequests: {
-                        $sum: {
-                            $cond: [{ $in: ["$status", ["new", "in_progress"]] }, 1, 0] // new=pending, in_progress=started
-                        }
-                    },
-                    totalRequests: { $sum: 1 }
-                }
-            }
-        ]);
+        if (error) throw error;
 
-        const result = stats[0] || {
-            totalEarnings: 0,
-            completedRequests: 0,
-            pendingRequests: 0,
-            totalRequests: 0
-        };
+        const requests = allRequests ?? [];
+        const terminalStatuses = ['completed', 'closed'];
+
+        const totalEarnings = requests
+            .filter(r => terminalStatuses.includes(r.status))
+            .reduce((sum, r) => sum + (r.interpreter_earning || 0), 0);
+
+        const completedRequests = requests.filter(r => terminalStatuses.includes(r.status)).length;
+        const pendingRequests = requests.filter(r => ['new', 'assigned', 'in_progress'].includes(r.status)).length;
+        const totalRequests = requests.length;
 
         return NextResponse.json({
-            balance: result.totalEarnings, // Currently available (simplified for now, usually needs withdrawal logic)
-            totalEarnings: result.totalEarnings,
-            totalRequests: result.totalRequests,
-            completedRequests: result.completedRequests,
-            pendingRequests: result.pendingRequests
+            balance: totalEarnings,
+            totalEarnings,
+            totalRequests,
+            completedRequests,
+            pendingRequests,
         });
-
     } catch (error) {
-        console.error('Error fetching interpreter stats:', error);
+        console.error('[interpreter/stats] Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

@@ -1,8 +1,6 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/adminAuth';
-import AuditLog from '@/models/AuditLog';
-import dbConnect from '@/lib/mongodb';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,34 +9,36 @@ export async function GET(req: NextRequest) {
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
         const { searchParams } = new URL(req.url);
-
         const page = parseInt(searchParams.get('page') || '1');
         const limit = parseInt(searchParams.get('limit') || '50');
-        const skip = (page - 1) * limit;
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
 
         const action = searchParams.get('action');
         const adminEmail = searchParams.get('email');
 
-        const filter: any = {};
-        if (action && action !== 'all') filter.action = action;
-        if (adminEmail) filter.adminEmail = { $regex: adminEmail, $options: 'i' };
+        let query = supabaseAdmin
+            .from('audit_logs')
+            .select('*', { count: 'exact' })
+            .order('created_at', { ascending: false })
+            .range(from, to);
 
-        const logs = await AuditLog.find(filter)
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit);
+        if (action && action !== 'all') query = query.eq('action', action);
+        if (adminEmail) query = query.ilike('admin_email', `%${adminEmail}%`);
 
-        const total = await AuditLog.countDocuments(filter);
+        const { data: logs, count, error } = await query;
+        if (error) throw error;
+
+        const total = count ?? 0;
 
         return NextResponse.json({
-            logs,
+            logs: logs ?? [],
             pagination: {
                 total,
                 page,
-                pages: Math.ceil(total / limit)
-            }
+                pages: Math.ceil(total / limit),
+            },
         });
 
     } catch (error) {

@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import Booking from '@/models/Booking';
-import Interpreter from '@/models/Interpreter';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken } from '@/lib/firebase-admin';
+import { initFirebaseAdmin } from '@/lib/firebase-admin';
+
+initFirebaseAdmin();
 
 export async function GET(request: Request) {
     try {
@@ -14,31 +15,31 @@ export async function GET(request: Request) {
         const token = authHeader.split('Bearer ')[1];
         const decodedToken = await verifyIdToken(token);
         const userId = decodedToken.uid;
-        console.log('Fetching bookings for user:', userId);
+        console.log('Fetching bookings for interpreter:', userId);
 
-        await dbConnect();
+        // Find interpreter profile
+        const { data: interpreter, error: intError } = await supabaseAdmin
+            .from('interpreters')
+            .select('id')
+            .eq('user_id', userId)
+            .maybeSingle();
 
-        // 1. Find the Interpreter profile associated with this User ID
-        const interpreter = await Interpreter.findOne({ userId });
-
-        if (!interpreter) {
+        if (intError || !interpreter) {
             console.error('Interpreter profile not found for userId:', userId);
-            return NextResponse.json({ error: 'ملف المفسر غير موجود (Interpreter Profile Not Found)' }, { status: 404 });
+            return NextResponse.json({ error: 'ملف المفسر غير موجود' }, { status: 404 });
         }
 
-        console.log('Found Interpreter:', interpreter._id);
+        const { data: bookings, error } = await supabaseAdmin
+            .from('bookings')
+            .select('*')
+            .eq('interpreter_id', interpreter.id)
+            .order('created_at', { ascending: false });
 
-        // 2. Find Bookings
-        // bookings collection often stores interpreterId as string or ObjectId. Booking model definition says string.
-        // Let's try to match both just in case, or simply match string if that's what we saved.
-        // We saved: interpreterId: interpreterId (which was passed from query param, likely string)
-        const bookings = await Booking.find({
-            interpreterId: interpreter._id.toString()
-        }).sort({ createdAt: -1 });
+        if (error) throw error;
 
-        console.log(`Found ${bookings.length} bookings`);
+        console.log(`Found ${bookings?.length ?? 0} bookings`);
 
-        return NextResponse.json({ bookings });
+        return NextResponse.json({ bookings: bookings ?? [] });
 
     } catch (error: any) {
         console.error('Error fetching interpreter bookings:', error);

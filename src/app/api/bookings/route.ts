@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
-import dbConnect from '@/lib/mongodb';
-import Booking from '@/models/Booking';
-import User from '@/models/User';
+import { supabaseAdmin } from '@/lib/supabase';
 
-// Initialize Firebase Admin
 initFirebaseAdmin();
 
 export async function GET(request: NextRequest) {
     try {
-        // Verify authentication
         const authHeader = request.headers.get('Authorization');
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
@@ -23,7 +19,6 @@ export async function GET(request: NextRequest) {
             const decodedToken = await getAuth().verifyIdToken(token);
             userEmail = decodedToken.email;
         } catch (authError) {
-            // Development fallback
             if (process.env.NODE_ENV === 'development') {
                 try {
                     const payload = token.split('.')[1];
@@ -39,18 +34,18 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'البريد الإلكتروني غير متوفر في التوكن' }, { status: 400 });
         }
 
-        await dbConnect();
+        const { data: bookings, error } = await supabaseAdmin
+            .from('bookings')
+            .select('*')
+            .eq('user_email', userEmail)
+            .order('created_at', { ascending: false });
 
-        // Find bookings by email (handling both guest bookings linked by email and authenticated bookings)
-        const bookings = await Booking.find({ userEmail: userEmail }).sort({ createdAt: -1 });
+        if (error) throw error;
 
-        return NextResponse.json({ bookings });
+        return NextResponse.json({ bookings: bookings ?? [] });
 
     } catch (error) {
         console.error('Error fetching bookings:', error);
-        return NextResponse.json(
-            { error: 'فشل في جلب الحجوزات' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'فشل في جلب الحجوزات' }, { status: 500 });
     }
 }

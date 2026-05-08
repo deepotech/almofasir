@@ -1,8 +1,6 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/adminAuth';
-import DreamRequest from '@/models/DreamRequest';
-import dbConnect from '@/lib/mongodb';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,59 +9,72 @@ export async function GET(req: NextRequest) {
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
-
         // 1. Aggregate Total Revenue & Commission
-        const revenueStats = await DreamRequest.aggregate([
-            { $match: { paymentStatus: 'paid', status: 'completed' } },
-            {
-                $group: {
-                    _id: null,
-                    totalRevenue: { $sum: '$lockedPrice' },
-                    totalCommission: { $sum: '$platformCommission' },
-                    count: { $sum: 1 }
-                }
-            }
-        ]);
+        const { data: revenueData } = await supabaseAdmin
+            .from('dream_requests')
+            .select('locked_price, platform_commission')
+            .eq('payment_status', 'paid')
+            .eq('status', 'completed');
 
-        const stats = revenueStats[0] || { totalRevenue: 0, totalCommission: 0, count: 0 };
+        let totalRevenue = 0;
+        let totalCommission = 0;
+        let count = 0;
+        
+        (revenueData || []).forEach(r => {
+            totalRevenue += r.locked_price || 0;
+            totalCommission += r.platform_commission || 0;
+            count++;
+        });
+
+        const stats = { totalRevenue, totalCommission, count };
 
         // 2. Daily Trends (Last 30 Days)
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-        const dailyRevenue = await DreamRequest.aggregate([
-            {
-                $match: {
-                    paymentStatus: 'paid',
-                    status: 'completed',
-                    createdAt: { $gte: thirtyDaysAgo }
-                }
-            },
-            {
-                $group: {
-                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-                    revenue: { $sum: '$lockedPrice' },
-                    commission: { $sum: '$platformCommission' }
-                }
-            },
-            { $sort: { _id: 1 } }
-        ]);
+        const { data: recentOrders } = await supabaseAdmin
+            .from('dream_requests')
+            .select('created_at, locked_price, platform_commission')
+            .eq('payment_status', 'paid')
+            .eq('status', 'completed')
+            .gte('created_at', thirtyDaysAgo.toISOString())
+            .order('created_at', { ascending: true });
+
+        const dailyMap: Record<string, any> = {};
+        (recentOrders || []).forEach(order => {
+            const dateObj = new Date(order.created_at);
+            const dateStr = `${dateObj.getUTCFullYear()}-${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(dateObj.getUTCDate()).padStart(2, '0')}`;
+            if (!dailyMap[dateStr]) {
+                dailyMap[dateStr] = { _id: dateStr, revenue: 0, commission: 0 };
+            }
+            dailyMap[dateStr].revenue += order.locked_price || 0;
+            dailyMap[dateStr].commission += order.platform_commission || 0;
+        });
+
+        const dailyRevenue = Object.values(dailyMap).sort((a, b) => a._id.localeCompare(b._id));
 
         // 3. Top Performers (Interpreters by generated revenue)
-        const topInterpreters = await DreamRequest.aggregate([
-            { $match: { paymentStatus: 'paid', status: 'completed', type: 'HUMAN' } },
-            {
-                $group: {
-                    _id: '$interpreterName',
-                    totalGenerated: { $sum: '$lockedPrice' },
-                    commissionEarned: { $sum: '$platformCommission' },
-                    ordersCount: { $sum: 1 }
-                }
-            },
-            { $sort: { totalGenerated: -1 } },
-            { $limit: 5 }
-        ]);
+        const { data: humanOrders } = await supabaseAdmin
+            .from('dream_requests')
+            .select('interpreter_name, locked_price, platform_commission')
+            .eq('payment_status', 'paid')
+            .eq('status', 'completed')
+            .eq('type', 'HUMAN');
+
+        const topMap: Record<string, any> = {};
+        (humanOrders || []).forEach(order => {
+            const name = order.interpreter_name || 'Unknown';
+            if (!topMap[name]) {
+                topMap[name] = { _id: name, totalGenerated: 0, commissionEarned: 0, ordersCount: 0 };
+            }
+            topMap[name].totalGenerated += order.locked_price || 0;
+            topMap[name].commissionEarned += order.platform_commission || 0;
+            topMap[name].ordersCount += 1;
+        });
+
+        const topInterpreters = Object.values(topMap)
+            .sort((a, b) => b.totalGenerated - a.totalGenerated)
+            .slice(0, 5);
 
         return NextResponse.json({
             stats,

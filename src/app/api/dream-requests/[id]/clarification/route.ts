@@ -1,27 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken, initFirebaseAdmin } from '@/lib/firebase-admin';
 import { canRequestClarification, validateStatusTransition } from '@/lib/permissions';
 
 initFirebaseAdmin();
 
-/**
- * POST /api/dream-requests/[id]/clarification - Ask ONE clarification question
- * 
- * User Rules:
- * - Only allowed when status = 'completed'
- * - Only ONE question allowed (if clarification_question exists, reject)
- * - Sets status = 'clarification_requested'
- */
 export async function POST(
     request: Request,
     context: { params: Promise<{ id: string }> }
 ) {
     try {
         const { id } = await context.params;
-
-        await dbConnect();
 
         const authHeader = request.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
@@ -34,8 +23,7 @@ export async function POST(
         try {
             const decodedToken = await verifyIdToken(token);
             userId = decodedToken.uid;
-        } catch (authError) {
-            console.error('Auth failed:', authError);
+        } catch {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -49,31 +37,29 @@ export async function POST(
             );
         }
 
-        // Get dream request
-        const dreamRequest = await DreamRequest.findById(id);
+        const { data: dreamRequest } = await supabaseAdmin
+            .from('dream_requests')
+            .select('id, status, user_id, clarification_question')
+            .eq('id', id)
+            .maybeSingle();
+
         if (!dreamRequest) {
             return NextResponse.json({ error: 'الطلب غير موجود' }, { status: 404 });
         }
 
-        // Verify ownership
-        if (dreamRequest.userId !== userId) {
+        if (dreamRequest.user_id !== userId) {
             return NextResponse.json({ error: 'غير مصرح بالوصول' }, { status: 403 });
         }
 
-        // Check if clarification is allowed
         const clarificationCheck = canRequestClarification(
             dreamRequest.status,
-            dreamRequest.clarificationQuestion
+            dreamRequest.clarification_question
         );
 
         if (!clarificationCheck.allowed) {
-            return NextResponse.json(
-                { error: clarificationCheck.error },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: clarificationCheck.error }, { status: 400 });
         }
 
-        // Validate status transition
         const transitionCheck = validateStatusTransition(
             dreamRequest.status,
             'clarification_requested',
@@ -81,38 +67,34 @@ export async function POST(
         );
 
         if (!transitionCheck.valid) {
-            return NextResponse.json(
-                { error: transitionCheck.error },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: transitionCheck.error }, { status: 400 });
         }
 
-        // Update request
-        const updatedRequest = await DreamRequest.findByIdAndUpdate(
-            id,
-            {
-                clarificationQuestion: question.trim(),
-                clarificationRequestedAt: new Date(),
-                status: 'clarification_requested'
-            },
-            { new: true }
-        );
+        const { data: updated, error } = await supabaseAdmin
+            .from('dream_requests')
+            .update({
+                clarification_question: question.trim(),
+                clarification_requested_at: new Date().toISOString(),
+                status: 'clarification_requested',
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
 
         return NextResponse.json({
             success: true,
             request: {
-                id: updatedRequest!._id,
-                status: updatedRequest!.status,
-                clarificationQuestion: updatedRequest!.clarificationQuestion
+                id: updated.id,
+                status: updated.status,
+                clarificationQuestion: updated.clarification_question,
             },
-            message: 'تم إرسال سؤال الاستيضاح بنجاح'
+            message: 'تم إرسال سؤال الاستيضاح بنجاح',
         });
 
     } catch (error) {
         console.error('Error submitting clarification:', error);
-        return NextResponse.json(
-            { error: 'حدث خطأ في إرسال السؤال' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'حدث خطأ في إرسال السؤال' }, { status: 500 });
     }
 }

@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-import Interpreter from '@/models/Interpreter';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 
 initFirebaseAdmin();
 
-// GET /api/interpreter/dreams - Get dreams assigned to interpreter (UNIFIED: Uses DreamRequest model)
 export async function GET(req: NextRequest) {
     try {
-        await dbConnect();
-
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -38,7 +33,12 @@ export async function GET(req: NextRequest) {
         }
 
         // Verify user is an interpreter
-        const interpreter = await Interpreter.findOne({ userId });
+        const { data: interpreter } = await supabaseAdmin
+            .from('interpreters')
+            .select('id, user_id, status')
+            .eq('user_id', userId)
+            .maybeSingle();
+
         if (!interpreter) {
             return NextResponse.json({ error: 'Not an interpreter' }, { status: 403 });
         }
@@ -46,86 +46,91 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const statusParam = searchParams.get('status');
 
-        // Build query for UNIFIED DreamRequest model (HUMAN type only for this view)
-        const query: Record<string, unknown> = {
-            interpreterUserId: userId,
-            type: 'HUMAN',
-            // Only show paid orders
-            paymentStatus: { $in: ['paid', 'released'] }
+        // Map frontend status to DB status
+        const statusMap: Record<string, string[]> = {
+            'pending_interpretation': ['assigned', 'new'],
+            'in_progress': ['in_progress'],
+            'completed': ['completed'],
         };
 
-        // Map frontend status to DreamRequest status
-        if (statusParam) {
-            const statusMap: Record<string, string> = {
-                'pending_interpretation': 'assigned',
-                'in_progress': 'in_progress',
-                'completed': 'completed'
-            };
-            query.status = statusMap[statusParam] || statusParam;
+        let query = supabaseAdmin
+            .from('dream_requests')
+            .select('*')
+            .eq('interpreter_user_id', userId)
+            .eq('type', 'HUMAN')
+            .in('payment_status', ['paid', 'released'])
+            .order('created_at', { ascending: false });
+
+        if (statusParam && statusMap[statusParam]) {
+            query = query.in('status', statusMap[statusParam]);
+        } else if (statusParam) {
+            query = query.eq('status', statusParam);
         }
 
-        const dreams = await DreamRequest.find(query)
-            .sort({ createdAt: -1 })
-            .lean();
+        const { data: dreams, error } = await query;
+        if (error) throw error;
 
-        // Map DreamRequest fields to the frontend expected format
-        const mappedDreams = dreams.map(dream => ({
-            _id: dream._id,
-            content: dream.dreamText,
+        const mappedDreams = (dreams ?? []).map((dream: any) => ({
+            _id: dream.id,
+            content: dream.dream_text,
             context: dream.context || {},
-            price: dream.lockedPrice || dream.price || 0,
-            interpreterEarning: (dream.lockedPrice || dream.price || 0) * 0.8, // 80% to interpreter
+            price: dream.locked_price || dream.price || 0,
+            interpreterEarning: (dream.locked_price || dream.price || 0) * 0.8,
             status: mapStatusToFrontend(dream.status),
-            deadline: calculateDeadline(dream.createdAt),
-            createdAt: dream.createdAt
+            deadline: calculateDeadline(dream.created_at),
+            createdAt: dream.created_at,
         }));
 
-        // Calculate stats using DreamRequest model
+        // Counts
+        const [pendingRes, inProgressRes, completedRes] = await Promise.all([
+            supabaseAdmin
+                .from('dream_requests')
+                .select('*', { count: 'exact', head: true })
+                .eq('interpreter_user_id', userId)
+                .eq('type', 'HUMAN')
+                .in('status', ['assigned', 'new'])
+                .in('payment_status', ['paid', 'released']),
+            supabaseAdmin
+                .from('dream_requests')
+                .select('*', { count: 'exact', head: true })
+                .eq('interpreter_user_id', userId)
+                .eq('type', 'HUMAN')
+                .eq('status', 'in_progress')
+                .in('payment_status', ['paid', 'released']),
+            supabaseAdmin
+                .from('dream_requests')
+                .select('*', { count: 'exact', head: true })
+                .eq('interpreter_user_id', userId)
+                .eq('type', 'HUMAN')
+                .eq('status', 'completed'),
+        ]);
+
         const stats = {
-            pending: await DreamRequest.countDocuments({
-                interpreterUserId: userId,
-                type: 'HUMAN',
-                status: { $in: ['assigned', 'new'] },
-                paymentStatus: { $in: ['paid', 'released'] }
-            }),
-            inProgress: await DreamRequest.countDocuments({
-                interpreterUserId: userId,
-                type: 'HUMAN',
-                status: 'in_progress',
-                paymentStatus: { $in: ['paid', 'released'] }
-            }),
-            completed: await DreamRequest.countDocuments({
-                interpreterUserId: userId,
-                type: 'HUMAN',
-                status: 'completed'
-            })
+            pending: pendingRes.count ?? 0,
+            inProgress: inProgressRes.count ?? 0,
+            completed: completedRes.count ?? 0,
         };
 
         return NextResponse.json({ dreams: mappedDreams, stats });
 
     } catch (error) {
         console.error('Error fetching interpreter dreams:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch dreams' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to fetch dreams' }, { status: 500 });
     }
 }
 
-// Helper function to map DreamRequest status to frontend status
 function mapStatusToFrontend(status: string): string {
     const map: Record<string, string> = {
         'new': 'pending_interpretation',
         'assigned': 'pending_interpretation',
         'in_progress': 'in_progress',
         'completed': 'completed',
-        'cancelled': 'expired'
+        'cancelled': 'expired',
     };
     return map[status] || 'pending_interpretation';
 }
 
-// Helper function to calculate deadline (24 hours from creation)
-function calculateDeadline(createdAt: Date): Date {
+function calculateDeadline(createdAt: string): Date {
     const deadline = new Date(createdAt);
     deadline.setHours(deadline.getHours() + 24);
     return deadline;

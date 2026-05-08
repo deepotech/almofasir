@@ -1,120 +1,63 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import InterpreterRequest from '@/models/InterpreterRequest';
+import { supabaseAdmin } from '@/lib/supabase';
 import nodemailer from 'nodemailer';
 
 export async function POST(req: Request) {
-    console.log('[API] Join Request Started'); // Start log
     try {
-        console.time('[Performance] DB Connect');
-        await dbConnect();
-        console.timeEnd('[Performance] DB Connect');
-
         const body = await req.json();
         const {
-            fullName,
-            email,
-            phone,
-            country,
-            experienceYears,
-            interpretationType,
-            bio,
-            sampleInterpretation,
+            fullName, email, phone, country,
+            experienceYears, interpretationType, bio, sampleInterpretation,
         } = body;
 
-        // Validation
         if (!fullName || !email || !country || !experienceYears || !interpretationType || !bio || !sampleInterpretation) {
-            return NextResponse.json(
-                { message: 'يرجى ملء جميع الحقول المطلوبة' },
-                { status: 400 }
-            );
+            return NextResponse.json({ message: 'يرجى ملء جميع الحقول المطلوبة' }, { status: 400 });
         }
 
-        // Create new request
-        console.time('[Performance] DB Create');
-        const newRequest = await InterpreterRequest.create({
-            fullName,
-            email,
-            phone,
-            country,
-            experienceYears,
-            interpretationType,
-            bio,
-            sampleInterpretation,
-        });
-        console.timeEnd('[Performance] DB Create');
-        console.log(`[API] New Request Created: ${newRequest._id}`);
-
-        // Send Email Notification to Admin
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS,
-            },
-        });
-
-        const adminEmail = process.env.ADMIN_EMAIL || 'dev23hecoplus93mor@gmail.com';
-
-        const emailContent = `
-            <div dir="rtl" style="font-family: Arial, sans-serif; padding: 20px; background-color: #f9fafb;">
-                <h2 style="color: #4f46e5;">طلب انضمام مفسر جديد</h2>
-                <div style="background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <p><strong>الاسم:</strong> ${fullName}</p>
-                    <p><strong>البريد الإلكتروني:</strong> ${email}</p>
-                    <p><strong>رقم الهاتف:</strong> ${phone || 'غير محدد'}</p>
-                    <p><strong>الدولة:</strong> ${country}</p>
-                    <p><strong>سنوات الخبرة:</strong> ${experienceYears}</p>
-                    <p><strong>نوع التفسير:</strong> ${interpretationType}</p>
-                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                    <p><strong>نبذة:</strong></p>
-                    <p style="background-color: #f3f4f6; padding: 10px; border-radius: 4px;">${bio}</p>
-                    <p><strong>نموذج تفسير:</strong></p>
-                    <p style="background-color: #f3f4f6; padding: 10px; border-radius: 4px;">${sampleInterpretation}</p>
-                </div>
-            </div>
-        `;
-
-        // ... Email Content construction remains the same ...
-
-        // Send Email with Timeout (Fire and Forget strategy with a small wait window)
-        // We wait max 2.5 seconds for email. If it takes longer, we proceed to return success to user/client
-        // so the UI doesn't hang. The email might still send in background on some platforms,
-        // or fail silently, but the important part is the DB record is saved.
-        try {
-            console.time('[Performance] Email Send');
-
-            const sendEmailPromise = transporter.sendMail({
-                from: process.env.EMAIL_USER,
-                to: adminEmail,
-                subject: `طلب انضمام مفسر جديد: ${fullName}`,
-                html: emailContent,
+        const { error } = await supabaseAdmin
+            .from('interpreter_requests')
+            .insert({
+                full_name: fullName,
+                email: email.toLowerCase(),
+                phone: phone || '',
+                country,
+                experience_years: experienceYears,
+                interpretation_type: interpretationType,
+                bio,
+                sample_interpretation: sampleInterpretation,
             });
 
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Email send timed out')), 2500)
-            );
+        if (error) throw error;
 
-            await Promise.race([sendEmailPromise, timeoutPromise]);
-
-            console.timeEnd('[Performance] Email Send');
-            console.log('[API] Email sent successfully');
-        } catch (emailError) {
-            console.timeEnd('[Performance] Email Send');
-            console.error('Email sending warning (non-fatal):', emailError);
-            // We consciously ignore this error so the user gets a "Success" response.
+        // Send email notification (fire-and-forget)
+        try {
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+            });
+            await Promise.race([
+                transporter.sendMail({
+                    from: process.env.EMAIL_USER,
+                    to: process.env.ADMIN_EMAIL || 'dev23hecoplus93mor@gmail.com',
+                    subject: `طلب انضمام مفسر جديد: ${fullName}`,
+                    html: `<div dir="rtl"><h2>طلب انضمام مفسر</h2>
+                        <p><strong>الاسم:</strong> ${fullName}</p>
+                        <p><strong>البريد:</strong> ${email}</p>
+                        <p><strong>الدولة:</strong> ${country}</p>
+                        <p><strong>الخبرة:</strong> ${experienceYears} سنوات</p>
+                        <p><strong>نوع التفسير:</strong> ${interpretationType}</p>
+                        <p><strong>نبذة:</strong> ${bio}</p>
+                        <p><strong>نموذج:</strong> ${sampleInterpretation}</p></div>`,
+                }),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500)),
+            ]);
+        } catch (emailErr) {
+            console.error('Email warning (non-fatal):', emailErr);
         }
 
-        return NextResponse.json(
-            { message: 'تم استلام طلبك بنجاح', success: true },
-            { status: 201 }
-        );
-
+        return NextResponse.json({ message: 'تم استلام طلبك بنجاح', success: true }, { status: 201 });
     } catch (error) {
         console.error('Error in Join API:', error);
-        return NextResponse.json(
-            { message: 'حدث خطأ أثناء معالجة الطلب' },
-            { status: 500 }
-        );
+        return NextResponse.json({ message: 'حدث خطأ أثناء معالجة الطلب' }, { status: 500 });
     }
 }

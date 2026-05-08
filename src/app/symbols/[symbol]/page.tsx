@@ -4,8 +4,7 @@ import { notFound } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { getSymbolData } from '@/lib/symbolsData';
-import dbConnect from '@/lib/mongodb';
-import Dream from '@/models/Dream';
+import { supabaseAdmin } from '@/lib/supabase';
 import { dreamSymbols } from '@/data/symbols';
 import { generateArticleSchema, generateBreadcrumbSchema, generateDreamListSchema } from '@/lib/seo';
 import EngagementWidget from '@/components/seo/EngagementWidget';
@@ -40,25 +39,20 @@ export default async function SymbolDetailPage({ params }: PageProps) {
         notFound();
     }
 
-    // Fetch related published dreams
+    // Fetch related published dreams via Supabase
     let relatedDreams: any[] = [];
     try {
-        await dbConnect();
-        relatedDreams = await Dream.find({
-            visibilityStatus: 'public',
-            $or: [
-                { 'publicVersion.comprehensiveInterpretation.primarySymbol': symbol.name },
-                { 'publicVersion.comprehensiveInterpretation.primarySymbol': symbol.id },
-                { tags: symbol.name },
-                { tags: { $in: symbol.aliases } }
-            ]
-        })
-            .select('publicVersion.title seoSlug updatedAt')
-            .sort({ 'publicVersion.publishedAt': -1 })
-            .limit(6)
-            .lean();
-    } catch(e) {
-        console.error('Error fetching related dreams for symbol:', e);
+        const searchTags = [symbol.name, symbol.id, ...(symbol.aliases || [])].filter(Boolean);
+        const { data } = await supabaseAdmin
+            .from('dreams')
+            .select('public_version, seo_slug, id')
+            .eq('visibility_status', 'public')
+            .overlaps('tags', searchTags)
+            .order('created_at', { ascending: false })
+            .limit(6);
+        relatedDreams = data ?? [];
+    } catch (e) {
+        console.error('[Supabase] Error fetching related dreams for symbol:', e);
     }
 
     const tabs = [
@@ -136,10 +130,10 @@ export default async function SymbolDetailPage({ params }: PageProps) {
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {relatedDreams.map((dream: any) => (
-                                        <Link href={`/${dream.seoSlug}`} key={dream._id.toString()} className="bg-white/5 backdrop-blur-md p-4 rounded-xl border border-white/10 hover:border-[var(--color-primary)]/40 transition-colors shadow-sm flex items-center gap-3 hover:bg-white/10">
+                                        <Link href={`/${dream.seo_slug || dream.id}`} key={dream.id} className="bg-white/5 backdrop-blur-md p-4 rounded-xl border border-white/10 hover:border-[var(--color-primary)]/40 transition-colors shadow-sm flex items-center gap-3 hover:bg-white/10">
                                             <span className="text-2xl">📖</span>
                                             <div>
-                                                <h4 className="font-bold text-white hover:text-[var(--color-primary-light)]">{dream.publicVersion?.title || 'تفسير حلم'}</h4>
+                                                <h4 className="font-bold text-white hover:text-[var(--color-primary-light)]">{dream.public_version?.title || dream.public_version?.comprehensiveInterpretation?.metaTitle || 'تفسير حلم'}</h4>
                                             </div>
                                         </Link>
                                     ))}

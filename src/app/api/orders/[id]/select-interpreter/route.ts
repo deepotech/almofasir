@@ -1,33 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-import Interpreter from '@/models/Interpreter';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 
 initFirebaseAdmin();
 
-/**
- * POST /api/orders/[id]/select-interpreter
- * 
- * UPDATE ONLY - Does NOT create a new order.
- * Assigns an interpreter to an existing order.
- * 
- * Required: interpreterId
- * Updates: interpreterId, interpreterUserId, interpreterName, price, lockedPrice, status
- */
 export async function POST(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    console.log('INTERPRETER SELECTED FOR:', 'API /orders/[id]/select-interpreter', Date.now());
     console.log('[API] POST /api/orders/[id]/select-interpreter (UPDATE ONLY)');
 
     try {
-        await dbConnect();
         const { id: orderId } = await params;
 
-        // 1. Authenticate User
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -37,10 +23,8 @@ export async function POST(
         let userId: string;
 
         try {
-            const decodedToken = await getAuth().verifyIdToken(token);
-            userId = decodedToken.uid;
-        } catch (authError) {
-            // Dev fallback
+            userId = (await getAuth().verifyIdToken(token)).uid;
+        } catch {
             if (process.env.NODE_ENV === 'development') {
                 try {
                     const payload = token.split('.')[1];
@@ -55,7 +39,6 @@ export async function POST(
             }
         }
 
-        // 2. Parse Body
         const body = await req.json();
         const { interpreterId } = body;
 
@@ -63,19 +46,22 @@ export async function POST(
             return NextResponse.json({ error: 'interpreterId is required' }, { status: 400 });
         }
 
-        // 3. Verify Order Exists and Belongs to User
-        const order = await DreamRequest.findById(orderId);
+        // Verify order exists and belongs to user
+        const { data: order } = await supabaseAdmin
+            .from('dream_requests')
+            .select('id, status, user_id, interpreter_id')
+            .eq('id', orderId)
+            .maybeSingle();
 
         if (!order) {
             return NextResponse.json({ error: 'Order not found' }, { status: 404 });
         }
 
-        if (order.userId !== userId) {
+        if (order.user_id !== userId) {
             return NextResponse.json({ error: 'Forbidden: Not your order' }, { status: 403 });
         }
 
-        // 4. Verify Order is in valid state for interpreter assignment
-        if (order.interpreterId) {
+        if (order.interpreter_id) {
             return NextResponse.json({ error: 'Dream already assigned to an interpreter' }, { status: 409 });
         }
 
@@ -85,36 +71,43 @@ export async function POST(
             }, { status: 400 });
         }
 
-        // 5. Fetch Interpreter Details
-        const interpreter = await Interpreter.findById(interpreterId);
+        // Fetch interpreter
+        const { data: interpreter } = await supabaseAdmin
+            .from('interpreters')
+            .select('id, user_id, display_name, price, status')
+            .eq('id', interpreterId)
+            .maybeSingle();
 
         if (!interpreter || interpreter.status !== 'active') {
             return NextResponse.json({ error: 'Interpreter not found or inactive' }, { status: 404 });
         }
 
-        // 6. UPDATE Order (NOT CREATE)
-        const updatedOrder = await DreamRequest.findByIdAndUpdate(
-            orderId,
-            {
-                interpreterId: interpreter._id.toString(),
-                interpreterUserId: interpreter.userId,
-                interpreterName: interpreter.displayName || '',
+        // Update order
+        const { data: updatedOrder, error } = await supabaseAdmin
+            .from('dream_requests')
+            .update({
+                interpreter_id: interpreter.id,
+                interpreter_user_id: interpreter.user_id,
+                interpreter_name: interpreter.display_name || '',
                 price: interpreter.price || 0,
-                lockedPrice: interpreter.price || 0,
+                locked_price: interpreter.price || 0,
                 status: 'assigned',
-                paymentStatus: 'pending', // Ready for payment
-                assignedAt: new Date()
-            },
-            { new: true }
-        );
+                payment_status: 'pending',
+                assigned_at: new Date().toISOString(),
+            })
+            .eq('id', orderId)
+            .select()
+            .single();
+
+        if (error) throw error;
 
         console.log(`[API] Order ${orderId} updated with interpreter ${interpreterId}`);
 
         return NextResponse.json({
             success: true,
-            orderId: updatedOrder?._id,
+            orderId: updatedOrder?.id,
             order: updatedOrder,
-            message: 'Interpreter assigned. Proceed to payment.'
+            message: 'Interpreter assigned. Proceed to payment.',
         });
 
     } catch (error: any) {

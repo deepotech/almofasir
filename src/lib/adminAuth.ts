@@ -1,53 +1,70 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyIdToken } from './firebase-admin';
-import User from '@/models/User';
-import dbConnect from './mongodb';
+import { supabaseAdmin } from '@/lib/supabase';
 
 /**
- * Higher-order function to protect Admin API routes
- * Verifies:
- * 1. Valid Firebase Token
- * 2. User exists in MongoDB
- * 3. User role is 'admin'
- * 4. User status is 'active'
+ * Higher-order function to protect Admin API routes.
+ * Verifies: Firebase Token → User exists in Supabase → role = 'admin' → status = 'active'
  */
-export async function verifyAdmin(req: NextRequest): Promise<{ authorized: boolean; admin?: any; response?: NextResponse }> {
+export async function verifyAdmin(
+    req: NextRequest
+): Promise<{ authorized: boolean; admin?: any; response?: NextResponse }> {
     try {
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
-            return { authorized: false, response: NextResponse.json({ error: 'Missing token' }, { status: 401 }) };
+            return {
+                authorized: false,
+                response: NextResponse.json({ error: 'Missing token' }, { status: 401 }),
+            };
         }
 
         const token = authHeader.split('Bearer ')[1];
         const decoded = await verifyIdToken(token);
 
-        if (!decoded || !decoded.uid) {
-            return { authorized: false, response: NextResponse.json({ error: 'Invalid token' }, { status: 401 }) };
+        if (!decoded?.uid) {
+            return {
+                authorized: false,
+                response: NextResponse.json({ error: 'Invalid token' }, { status: 401 }),
+            };
         }
 
-        await dbConnect();
+        const { data: adminUser, error } = await supabaseAdmin
+            .from('users')
+            .select('id, firebase_uid, email, role, status')
+            .eq('firebase_uid', decoded.uid)
+            .single();
 
-        // Find user in Mongo
-        const adminUser = await User.findOne({ firebaseUid: decoded.uid });
-
-        if (!adminUser) {
-            return { authorized: false, response: NextResponse.json({ error: 'Admin user not found' }, { status: 403 }) };
+        if (error || !adminUser) {
+            return {
+                authorized: false,
+                response: NextResponse.json({ error: 'Admin user not found' }, { status: 403 }),
+            };
         }
 
         if (adminUser.role !== 'admin') {
-            return { authorized: false, response: NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 }) };
+            return {
+                authorized: false,
+                response: NextResponse.json(
+                    { error: 'Unauthorized: Admin access required' },
+                    { status: 403 }
+                ),
+            };
         }
 
-        // Treat missing status as 'active' (for users created before the status field was added)
+        // Treat missing status as 'active' for legacy users
         if (adminUser.status && adminUser.status !== 'active') {
-            return { authorized: false, response: NextResponse.json({ error: 'Account suspended' }, { status: 403 }) };
+            return {
+                authorized: false,
+                response: NextResponse.json({ error: 'Account suspended' }, { status: 403 }),
+            };
         }
 
         return { authorized: true, admin: adminUser };
-
     } catch (error) {
-        console.error('Admin verification failed:', error);
-        return { authorized: false, response: NextResponse.json({ error: 'Internal Server Error' }, { status: 500 }) };
+        console.error('[adminAuth] Verification failed:', error);
+        return {
+            authorized: false,
+            response: NextResponse.json({ error: 'Internal Server Error' }, { status: 500 }),
+        };
     }
 }

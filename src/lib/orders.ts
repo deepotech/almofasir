@@ -1,15 +1,5 @@
-/**
- * Order Management - Single Source of Truth
- * 
- * This module is the ONLY place where DreamRequest (Order) records are created.
- * All endpoints must call these functions instead of creating records directly.
- */
-
 import crypto from 'crypto';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-import Interpreter from '@/models/Interpreter';
-import { getSettings } from '@/models/PlatformSettings';
+import { supabaseAdmin } from '@/lib/supabase';
 
 // ============================================
 // TYPES
@@ -27,7 +17,7 @@ export interface CreateOrderInput {
         dominantFeeling?: string;
         isRecurring?: boolean;
     };
-    bookingId?: string; // Optional: link to a booking record
+    bookingId?: string;
 }
 
 export interface CreateOrderResult {
@@ -38,39 +28,32 @@ export interface CreateOrderResult {
         interpreterName: string;
         price: number;
         createdAt: Date;
-    };
+    } | null;
     isDuplicate: boolean;
     message: string;
 }
 
 // ============================================
-// HASH GENERATION - Permanent Duplicate Prevention
+// HASH GENERATION
 // ============================================
 
-/**
- * Generate a permanent hash for duplicate prevention
- * Same user + Same dreamText = Same hash (ALWAYS)
- */
 export function generateDreamHash(userId: string, dreamText: string): string {
     const normalized = dreamText.trim().toLowerCase();
     return crypto.createHash('sha256').update(`${userId}_${normalized}`).digest('hex');
 }
 
 // ============================================
-// STATE MACHINE - Valid Status Transitions
+// STATE MACHINE
 // ============================================
 
 export const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
     'new': ['assigned', 'cancelled'],
     'assigned': ['in_progress', 'cancelled'],
     'in_progress': ['completed', 'cancelled'],
-    'completed': [], // Terminal state
-    'cancelled': []  // Terminal state
+    'completed': [],
+    'cancelled': []
 };
 
-/**
- * Validate if a status transition is allowed
- */
 export function isValidTransition(fromStatus: string, toStatus: string): boolean {
     const allowed = VALID_STATUS_TRANSITIONS[fromStatus];
     if (!allowed) return false;
@@ -78,25 +61,12 @@ export function isValidTransition(fromStatus: string, toStatus: string): boolean
 }
 
 // ============================================
-// ORDER CREATION - Single Entry Point
+// ORDER CREATION
 // ============================================
 
-/**
- * Create a new order (DreamRequest)
- * This is the ONLY function that creates orders.
- * 
- * Defense in Depth:
- * 1. Generate dreamHash from userId + dreamText
- * 2. Check if order already exists with this hash
- * 3. If exists, return existing (no duplicate)
- * 4. If not, create with unique constraint as final guard
- */
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
-    await dbConnect();
-
     const { userId, userEmail, interpreterId, dreamText, context, bookingId } = input;
 
-    // 1. Validate required fields
     if (!userId || !dreamText || !interpreterId) {
         throw new Error('Missing required fields: userId, dreamText, interpreterId');
     }
@@ -105,126 +75,126 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         throw new Error('Dream text must be at least 20 characters');
     }
 
-    // 2. Get interpreter (to lock price)
-    const interpreter = await Interpreter.findById(interpreterId);
-    if (!interpreter) {
-        throw new Error('Interpreter not found');
-    }
+    // Get interpreter
+    const { data: interpreter } = await supabaseAdmin
+        .from('interpreters')
+        .select('*')
+        .eq('id', interpreterId)
+        .single();
 
-    if (!interpreter.isActive || interpreter.status !== 'active') {
-        throw new Error('Interpreter not available');
-    }
+    if (!interpreter) throw new Error('Interpreter not found');
+    if (!interpreter.is_active || interpreter.status !== 'active') throw new Error('Interpreter not available');
 
-    // 3. Generate PERMANENT hash & Idempotency Key
-    const type = 'HUMAN'; // Default for this function as it's used for experts/bookings
-
-    // Normalized text (first 100 chars) for strict key
+    const type = 'HUMAN';
     const normalizedTextKey = dreamText.trim().substring(0, 100).toLowerCase();
     const rawKey = `${userId}_${normalizedTextKey}_${interpreterId}_${type}`;
     const idempotencyKey = crypto.createHash('sha256').update(rawKey).digest('hex');
-
-    // Legacy hash for backward compat
     const dreamHash = generateDreamHash(userId, dreamText);
 
-    console.log(`[Order] Creating order. User: ${userId}, Key: ${idempotencyKey.substring(0, 10)}...`);
-
-    // 4. Check for existing order (Defense in Depth)
-
-    // A. Check for RECENT order (Time Window Throttling - anti-spam < 1 min)
-    // This catches double-clicks that might have slightly different text/hashes
-    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
-    const recentOrder = await DreamRequest.findOne({
-        userId,
-        createdAt: { $gt: oneMinuteAgo }
-    });
+    // Throttling: Check < 1 min order
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString();
+    const { data: recentOrder } = await supabaseAdmin
+        .from('dream_requests')
+        .select('id, status, interpreter_name, locked_price, created_at')
+        .eq('user_id', userId)
+        .gt('created_at', oneMinuteAgo)
+        .limit(1)
+        .maybeSingle();
 
     if (recentOrder) {
-        console.log(`[Order] THROTTLE: User ${userId} blocked (recent order ${recentOrder._id} < 1min)`);
         return {
             success: true,
             order: {
-                id: recentOrder._id.toString(),
+                id: recentOrder.id,
                 status: recentOrder.status,
-                interpreterName: recentOrder.interpreterName,
-                price: recentOrder.lockedPrice,
-                createdAt: recentOrder.createdAt
+                interpreterName: recentOrder.interpreter_name,
+                price: recentOrder.locked_price,
+                createdAt: new Date(recentOrder.created_at)
             },
             isDuplicate: true,
             message: 'تم استقبال طلبك بنجاح (مكرر)'
         };
     }
 
-    // B. Check exact hash or key
-    const existingOrder = await DreamRequest.findOne({
-        $or: [
-            { idempotencyKey },
-            { userId, dreamHash }
-        ]
-    });
+    // Exact Duplicate check
+    const { data: existingOrder } = await supabaseAdmin
+        .from('dream_requests')
+        .select('id, status, interpreter_name, locked_price, created_at')
+        .or(`idempotency_key.eq.${idempotencyKey},and(user_id.eq.${userId},dream_hash.eq.${dreamHash})`)
+        .limit(1)
+        .maybeSingle();
 
     if (existingOrder) {
-        console.log(`[Order] DUPLICATE BLOCKED: Returning existing order ${existingOrder._id}`);
         return {
             success: true,
             order: {
-                id: existingOrder._id.toString(),
+                id: existingOrder.id,
                 status: existingOrder.status,
-                interpreterName: existingOrder.interpreterName,
-                price: existingOrder.lockedPrice,
-                createdAt: existingOrder.createdAt
+                interpreterName: existingOrder.interpreter_name,
+                price: existingOrder.locked_price,
+                createdAt: new Date(existingOrder.created_at)
             },
             isDuplicate: true,
             message: 'لقد قمت بإرسال هذا الحلم مسبقاً'
         };
     }
 
-    // 5. Lock price at creation time (IMMUTABLE)
+    // Get commission rate
+    const { data: settings } = await supabaseAdmin
+        .from('platform_settings')
+        .select('commission_rate')
+        .single();
+    
+    const commissionRate = settings?.commission_rate || 0.3;
+
     const lockedPrice = interpreter.price;
-    const settings = await getSettings();
-    const platformCommission = lockedPrice * settings.commissionRate;
+    const platformCommission = lockedPrice * commissionRate;
     const interpreterEarning = lockedPrice - platformCommission;
 
-    // 6. Create order with unique constraint as FINAL GUARD
-    let newOrder;
-    try {
-        newOrder = await DreamRequest.create({
-            userId,
-            userEmail,
-            type, // Explicitly set type
-            interpreterId: interpreter._id.toString(),
-            interpreterUserId: interpreter.userId,
-            interpreterName: interpreter.displayName,
-            dreamText: dreamText.trim(),
-            dreamHash, // Legacy
-            idempotencyKey, // STRICT GUARD
+    const { data: newOrder, error } = await supabaseAdmin
+        .from('dream_requests')
+        .insert({
+            user_id: userId,
+            user_email: userEmail,
+            type,
+            interpreter_id: interpreter.id,
+            interpreter_user_id: interpreter.user_id,
+            interpreter_name: interpreter.display_name,
+            dream_text: dreamText.trim(),
+            dream_hash: dreamHash,
+            idempotency_key: idempotencyKey,
             context: context || {},
             price: lockedPrice,
-            lockedPrice, // IMMUTABLE
+            locked_price: lockedPrice,
             currency: interpreter.currency || 'USD',
             status: 'new',
-            paymentStatus: 'paid', // Assuming payment completed before this
-            paymentLockedAmount: lockedPrice,
-            platformCommission,
-            interpreterEarning,
-            bookingId: bookingId || undefined
-        });
+            payment_status: 'paid',
+            payment_locked_amount: lockedPrice,
+            platform_commission: platformCommission,
+            interpreter_earning: interpreterEarning,
+            booking_id: bookingId || null
+        })
+        .select('id, status, interpreter_name, locked_price, created_at')
+        .single();
 
-        console.log(`[Order] NEW ORDER CREATED: ${newOrder._id}`);
-
-    } catch (error: any) {
-        // Handle race condition (MongoDB duplicate key error)
-        if (error.code === 11000) {
-            console.log(`[Order] RACE CONDITION: Duplicate key, fetching winner...`);
-            const winner = await DreamRequest.findOne({ userId, dreamHash });
+    if (error) {
+        // Race condition
+        if (error.code === '23505') { 
+            const { data: winner } = await supabaseAdmin
+                .from('dream_requests')
+                .select('id, status, interpreter_name, locked_price, created_at')
+                .eq('user_id', userId)
+                .eq('dream_hash', dreamHash)
+                .single();
             if (winner) {
                 return {
                     success: true,
                     order: {
-                        id: winner._id.toString(),
+                        id: winner.id,
                         status: winner.status,
-                        interpreterName: winner.interpreterName,
-                        price: winner.lockedPrice,
-                        createdAt: winner.createdAt
+                        interpreterName: winner.interpreter_name,
+                        price: winner.locked_price,
+                        createdAt: new Date(winner.created_at)
                     },
                     isDuplicate: true,
                     message: 'تم استقبال طلبك بنجاح'
@@ -234,19 +204,17 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         throw error;
     }
 
-    // 7. Update interpreter stats (only for NEW orders)
-    await Interpreter.findByIdAndUpdate(interpreterId, {
-        $inc: { totalDreams: 1 }
-    });
+    // Update interpreter stats
+    await supabaseAdmin.rpc('increment_interpreter_total_dreams', { p_id: interpreter.id });
 
     return {
         success: true,
         order: {
-            id: newOrder._id.toString(),
+            id: newOrder.id,
             status: newOrder.status,
-            interpreterName: newOrder.interpreterName,
-            price: newOrder.lockedPrice,
-            createdAt: newOrder.createdAt
+            interpreterName: newOrder.interpreter_name,
+            price: newOrder.locked_price,
+            createdAt: new Date(newOrder.created_at)
         },
         isDuplicate: false,
         message: 'تم إرسال طلب تفسير الحلم بنجاح'
@@ -254,58 +222,53 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
 }
 
 // ============================================
-// ORDER STATUS UPDATE - With State Machine Validation
+// ORDER STATUS UPDATE
 // ============================================
 
 export interface UpdateOrderStatusInput {
     orderId: string;
     newStatus: string;
-    interpreterId?: string; // Required for assignment
+    interpreterId?: string;
 }
 
-/**
- * Update order status with strict state machine validation
- */
 export async function updateOrderStatus(input: UpdateOrderStatusInput): Promise<{ success: boolean; order: any }> {
-    await dbConnect();
-
     const { orderId, newStatus, interpreterId } = input;
 
-    const order = await DreamRequest.findById(orderId);
-    if (!order) {
-        throw new Error('Order not found');
-    }
+    const { data: order } = await supabaseAdmin
+        .from('dream_requests')
+        .select('id, status')
+        .eq('id', orderId)
+        .single();
 
-    // Validate transition
+    if (!order) throw new Error('Order not found');
+
     if (!isValidTransition(order.status, newStatus)) {
         throw new Error(`Invalid status transition: ${order.status} → ${newStatus}`);
     }
 
-    // Build update object
-    const update: Record<string, any> = { status: newStatus };
+    const update: Record<string, any> = { status: newStatus, updated_at: new Date().toISOString() };
 
-    if (newStatus === 'assigned' && interpreterId) {
-        update.assignedAt = new Date();
-    }
-
+    if (newStatus === 'assigned' && interpreterId) update.assigned_at = new Date().toISOString();
     if (newStatus === 'in_progress') {
-        update.startedAt = new Date();
-        update.acceptedAt = new Date();
+        update.started_at = new Date().toISOString();
+        update.accepted_at = new Date().toISOString();
     }
-
     if (newStatus === 'completed') {
-        update.completedAt = new Date();
-        update.paymentStatus = 'released';
+        update.completed_at = new Date().toISOString();
+        update.payment_status = 'released';
     }
-
     if (newStatus === 'cancelled') {
-        update.closedAt = new Date();
-        update.paymentStatus = 'refunded';
+        update.cancelled_at = new Date().toISOString();
+        update.payment_status = 'refunded';
     }
 
-    const updatedOrder = await DreamRequest.findByIdAndUpdate(orderId, update, { new: true });
+    const { data: updatedOrder, error } = await supabaseAdmin
+        .from('dream_requests')
+        .update(update)
+        .eq('id', orderId)
+        .select()
+        .single();
 
-    console.log(`[Order] Status updated: ${order.status} → ${newStatus} for order ${orderId}`);
-
+    if (error) throw error;
     return { success: true, order: updatedOrder };
 }

@@ -1,8 +1,6 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/adminAuth';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
+import { supabaseAdmin } from '@/lib/supabase';
 import { STUCK_ORDER_THRESHOLD_HOURS } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
@@ -12,44 +10,28 @@ export async function GET(req: NextRequest) {
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
+        const urgentThresholdDate = new Date(Date.now() - STUCK_ORDER_THRESHOLD_HOURS * 60 * 60 * 1000).toISOString();
+        const warningThresholdDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-        // Urgent Conditions:
-        // 1. Status 'new' AND created > Threshold (user waiting for assignment)
-        // 2. Status 'assigned' AND updated > 24h (interpreter inactive on dream)
-        // 3. Status 'in_progress' AND updated > 48h (interpreter stuck)
-        // 4. Any dispute (if field exists, checked logically) - Currently we don't have explicit 'disputed' status in Enum, assuming metadata or flag if added.
-        //    For now, we focus on TIMING urgency.
+        // 1. Status 'new' AND created > Threshold
+        // 2. Status 'assigned' AND updated > 24h
+        const { data: urgentOrders, error } = await supabaseAdmin
+            .from('dream_requests')
+            .select('id, user_id, interpreter_name, status, type, created_at, updated_at, payment_status, price')
+            .or(`and(status.eq.new,created_at.lt.${urgentThresholdDate},payment_status.eq.paid),and(status.eq.assigned,updated_at.lt.${warningThresholdDate},payment_status.eq.paid)`)
+            .order('created_at', { ascending: true })
+            .limit(20);
 
-        const urgentThresholdDate = new Date(Date.now() - STUCK_ORDER_THRESHOLD_HOURS * 60 * 60 * 1000);
-        const warningThresholdDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        if (error) throw error;
 
-        const urgentOrders = await DreamRequest.find({
-            $or: [
-                {
-                    status: 'new',
-                    createdAt: { $lt: urgentThresholdDate },
-                    paymentStatus: 'paid' // Priority to paid users
-                },
-                {
-                    status: 'assigned',
-                    updatedAt: { $lt: warningThresholdDate },
-                    paymentStatus: 'paid'
-                }
-            ]
-        })
-            .sort({ createdAt: 1 }) // Oldest first
-            .limit(20)
-            .select('userId interpreterName status type createdAt updatedAt paymentStatus price');
-
-        const serialized = urgentOrders.map(order => ({
-            id: order._id,
+        const serialized = (urgentOrders || []).map((order: any) => ({
+            id: order.id,
             type: order.type,
             status: order.status,
-            customer: order.userId.substring(0, 6) + '...', // Masked for list view or lookup user
-            interpreter: order.interpreterName || 'Unassigned',
-            waitingTimeHours: Math.floor((Date.now() - new Date(order.createdAt).getTime()) / (1000 * 60 * 60)),
-            lastUpdateHours: Math.floor((Date.now() - new Date(order.updatedAt).getTime()) / (1000 * 60 * 60)),
+            customer: order.user_id.substring(0, 6) + '...',
+            interpreter: order.interpreter_name || 'Unassigned',
+            waitingTimeHours: Math.floor((Date.now() - new Date(order.created_at).getTime()) / (1000 * 60 * 60)),
+            lastUpdateHours: Math.floor((Date.now() - new Date(order.updated_at).getTime()) / (1000 * 60 * 60)),
             amount: order.price
         }));
 

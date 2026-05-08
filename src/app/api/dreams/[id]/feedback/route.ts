@@ -1,69 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuth } from 'firebase-admin/auth';
+import { supabaseAdmin } from '@/lib/supabase';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
-import dbConnect from '@/lib/mongodb';
-import Dream from '@/models/Dream';
+import { getAuth } from 'firebase-admin/auth';
 
 initFirebaseAdmin();
 
+async function resolveUserId(req: NextRequest): Promise<string | null> {
+    const h = req.headers.get('Authorization');
+    if (!h?.startsWith('Bearer ')) return null;
+    const token = h.split('Bearer ')[1];
+    try { return (await getAuth().verifyIdToken(token)).uid; }
+    catch {
+        if (process.env.NODE_ENV !== 'development') return null;
+        try {
+            const d = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf-8'));
+            return d.user_id || d.sub || null;
+        } catch { return null; }
+    }
+}
+
+// POST /api/dreams/[id]/feedback
 export async function POST(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        await dbConnect();
-
-        const authHeader = req.headers.get('Authorization');
-        if (!authHeader?.startsWith('Bearer ')) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
-        const token = authHeader.split('Bearer ')[1];
-        let userId: string;
-
-        try {
-            const decodedToken = await getAuth().verifyIdToken(token);
-            userId = decodedToken.uid;
-        } catch (authError) {
-            // Dev fallback
-            if (process.env.NODE_ENV === 'development') {
-                try {
-                    const payload = token.split('.')[1];
-                    const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
-                    userId = decoded.user_id || decoded.sub;
-                } catch {
-                    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-                }
-            } else {
-                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-            }
-        }
-
         const { id } = await params;
+        const userId = await resolveUserId(req);
+        if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const { liked, cameTrue } = await req.json();
 
-        // Find and update the dream
-        const dream = await Dream.findOneAndUpdate(
-            { _id: id, userId },
-            {
-                $set: {
-                    'userFeedback.liked': liked,
-                    'userFeedback.cameTrue': cameTrue,
-                    'userFeedback.feedbackDate': new Date()
-                }
-            },
-            { new: true }
-        );
+        const { data: dream, error } = await supabaseAdmin
+            .from('dreams')
+            .update({
+                user_feedback: { liked, cameTrue, feedbackDate: new Date().toISOString() },
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', id)
+            .eq('user_id', userId)
+            .select('user_feedback')
+            .single();
 
-        if (!dream) {
+        if (error || !dream) {
             return NextResponse.json({ error: 'Dream not found' }, { status: 404 });
         }
 
-        return NextResponse.json({
-            success: true,
-            feedback: dream.userFeedback
-        });
-
+        return NextResponse.json({ success: true, feedback: dream.user_feedback });
     } catch (error) {
         console.error('Error saving feedback:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

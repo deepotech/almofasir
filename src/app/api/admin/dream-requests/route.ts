@@ -1,23 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-import User from '@/models/User';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken, initFirebaseAdmin } from '@/lib/firebase-admin';
+import { verifyAdmin } from '@/lib/adminAuth';
 
 initFirebaseAdmin();
 
-/**
- * GET /api/admin/dream-requests - View ALL dream requests
- * 
- * Admin Rules:
- * - Can view ALL requests
- * - Can filter by status, interpreter, user
- * - Read-only access to content (cannot modify)
- */
 export async function GET(req: NextRequest) {
     try {
-        await dbConnect();
-
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -29,71 +18,78 @@ export async function GET(req: NextRequest) {
         try {
             const decodedToken = await verifyIdToken(token);
             userId = decodedToken.uid;
-        } catch (authError) {
-            console.error('Auth failed:', authError);
+        } catch {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         // Verify admin role
-        const user = await User.findOne({ firebaseUid: userId });
-        if (!user || user.role !== 'admin') {
+        const { data: adminUser } = await supabaseAdmin
+            .from('users')
+            .select('role')
+            .eq('firebase_uid', userId)
+            .maybeSingle();
+
+        if (!adminUser || adminUser.role !== 'admin') {
             return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
         }
 
-        // Get query parameters
         const { searchParams } = new URL(req.url);
         const status = searchParams.get('status');
         const interpreterId = searchParams.get('interpreterId');
         const requestUserId = searchParams.get('userId');
         const page = parseInt(searchParams.get('page') || '1');
         const limit = parseInt(searchParams.get('limit') || '50');
+        const from = (page - 1) * limit;
+        const to = from + limit - 1;
 
-        // Build query
-        const query: Record<string, unknown> = {};
-        if (status) query.status = status;
-        if (interpreterId) query.interpreterId = interpreterId;
-        if (requestUserId) query.userId = requestUserId;
+        let query = supabaseAdmin
+            .from('dream_requests')
+            .select('*', { count: 'exact' })
+            .order('created_at', { ascending: false })
+            .range(from, to);
 
-        // Get total count
-        const total = await DreamRequest.countDocuments(query);
+        if (status) query = query.eq('status', status);
+        if (interpreterId) query = query.eq('interpreter_id', interpreterId);
+        if (requestUserId) query = query.eq('user_id', requestUserId);
 
-        // Get paginated results
-        const requests = await DreamRequest.find(query)
-            .sort({ createdAt: -1 })
-            .skip((page - 1) * limit)
-            .limit(limit)
-            .lean();
+        const { data: requests, count, error } = await query;
+        if (error) throw error;
 
-        // Calculate stats
+        const total = count ?? 0;
+
+        // Stats counts
+        const [totalRes, newRes, inProgressRes, completedRes, revenueRes] = await Promise.all([
+            supabaseAdmin.from('dream_requests').select('*', { count: 'exact', head: true }),
+            supabaseAdmin.from('dream_requests').select('*', { count: 'exact', head: true }).eq('status', 'new'),
+            supabaseAdmin.from('dream_requests').select('*', { count: 'exact', head: true }).eq('status', 'in_progress'),
+            supabaseAdmin.from('dream_requests').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
+            supabaseAdmin.from('dream_requests').select('platform_commission').in('status', ['completed', 'clarification_requested', 'closed']),
+        ]);
+
+        let totalRevenue = 0;
+        (revenueRes.data || []).forEach((row: any) => totalRevenue += (row.platform_commission || 0));
+
         const stats = {
-            total: await DreamRequest.countDocuments({}),
-            new: await DreamRequest.countDocuments({ status: 'new' }),
-            inProgress: await DreamRequest.countDocuments({ status: 'in_progress' }),
-            completed: await DreamRequest.countDocuments({ status: 'completed' }),
-            clarificationRequested: await DreamRequest.countDocuments({ status: 'clarification_requested' }),
-            closed: await DreamRequest.countDocuments({ status: 'closed' }),
-            totalRevenue: await DreamRequest.aggregate([
-                { $match: { status: { $in: ['completed', 'clarification_requested', 'closed'] } } },
-                { $group: { _id: null, total: { $sum: '$platformCommission' } } }
-            ]).then(result => result[0]?.total || 0)
+            total: totalRes.count ?? 0,
+            new: newRes.count ?? 0,
+            inProgress: inProgressRes.count ?? 0,
+            completed: completedRes.count ?? 0,
+            totalRevenue,
         };
 
         return NextResponse.json({
-            requests,
+            requests: requests ?? [],
             stats,
             pagination: {
                 page,
                 limit,
                 total,
-                pages: Math.ceil(total / limit)
-            }
+                pages: Math.ceil(total / limit),
+            },
         });
 
     } catch (error) {
         console.error('Error fetching admin dream requests:', error);
-        return NextResponse.json(
-            { error: 'حدث خطأ في جلب الطلبات' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'حدث خطأ في جلب الطلبات' }, { status: 500 });
     }
 }

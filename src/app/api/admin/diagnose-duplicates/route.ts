@@ -1,24 +1,17 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
-    try {
-        await dbConnect();
+    return NextResponse.json({
+        success: true,
+        message: 'Migrated to Supabase. Use the Supabase Dashboard for data integrity checks.',
+        migrated: true,
+    });
+}
 
-        // Fetch all requests, sorted by creation
-        const requests = await DreamRequest.find({})
-            .select('dreamText userId interpreterId status createdAt dreamHash lockedPrice')
-            .sort({ createdAt: -1 })
-            .limit(50);
-
-        return NextResponse.json({
-            count: requests.length,
-            requests
-        });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+export async function POST() {
+    return NextResponse.json({
+        success: true,
+        message: 'Migrated to Supabase. Use the Supabase Dashboard for data integrity checks.',
+        migrated: true,
+    });
 }

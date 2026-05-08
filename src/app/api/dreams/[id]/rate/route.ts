@@ -1,23 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import Dream from '@/models/Dream';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken, initFirebaseAdmin } from '@/lib/firebase-admin';
 
 initFirebaseAdmin();
 
-/**
- * POST /api/dreams/[id]/rate
- * Submit a star rating for an AI-interpreted dream
- */
 export async function POST(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
         const { id } = await params;
-        await dbConnect();
 
-        // Auth check
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
@@ -25,91 +18,70 @@ export async function POST(
 
         const token = authHeader.split('Bearer ')[1];
         let userId: string;
-
         try {
-            const decodedToken = await verifyIdToken(token);
-            userId = decodedToken.uid;
-        } catch (authError) {
-            console.error('[Dream Rate API] Auth failed:', authError);
+            const decoded = await verifyIdToken(token);
+            userId = decoded.uid;
+        } catch {
             return NextResponse.json({ error: 'غير مصرح' }, { status: 401 });
         }
 
         const body = await req.json();
         const { rating, feedback, answers } = body;
 
-        // Validate rating
         if (typeof rating !== 'number' || rating < 1 || rating > 5) {
-            return NextResponse.json(
-                { error: 'التقييم يجب أن يكون بين 1 و 5 نجوم' },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: 'التقييم يجب أن يكون بين 1 و 5 نجوم' }, { status: 400 });
         }
-
-        // Validate feedback length  
         if (feedback && typeof feedback === 'string' && feedback.length > 200) {
-            return NextResponse.json(
-                { error: 'التعليق يجب ألا يتجاوز 200 حرف' },
-                { status: 400 }
-            );
-        }
-
-        // Find the dream
-        const dream = await Dream.findOne({
-            _id: id,
-            userId: userId
-        });
-
-        if (!dream) {
-            return NextResponse.json(
-                { error: 'الحلم غير موجود أو ليس لديك صلاحية تقييمه' },
-                { status: 404 }
-            );
+            return NextResponse.json({ error: 'التعليق يجب ألا يتجاوز 200 حرف' }, { status: 400 });
         }
 
         // Check if already rated
-        if (dream.rating) {
-            return NextResponse.json(
-                { error: 'تم تقييم هذا الحلم مسبقاً' },
-                { status: 400 }
-            );
+        const { data: existing } = await supabaseAdmin
+            .from('dreams')
+            .select('rating')
+            .eq('id', id)
+            .eq('user_id', userId)
+            .single();
+
+        if (!existing) {
+            return NextResponse.json({ error: 'الحلم غير موجود' }, { status: 404 });
+        }
+        if (existing.rating) {
+            return NextResponse.json({ error: 'تم تقييم هذا الحلم مسبقاً' }, { status: 400 });
         }
 
-        // Build feedback string with optional answers
+        // Build full feedback
         let fullFeedback = feedback?.trim() || '';
         if (answers && typeof answers === 'object') {
-            const answerLines = Object.entries(answers)
-                .filter(([_, v]) => v)
+            const lines = Object.entries(answers)
+                .filter(([, v]) => v)
                 .map(([k, v]) => `${k}: ${v}`)
                 .join('\n');
-            if (answerLines) {
-                fullFeedback = answerLines + (fullFeedback ? '\n---\n' + fullFeedback : '');
-            }
+            if (lines) fullFeedback = lines + (fullFeedback ? '\n---\n' + fullFeedback : '');
         }
 
-        // Save rating
-        dream.rating = rating;
-        dream.ratingFeedback = fullFeedback.substring(0, 500);
-        dream.ratedAt = new Date();
-        await dream.save();
+        const { data: updated, error } = await supabaseAdmin
+            .from('dreams')
+            .update({
+                rating,
+                rating_feedback: fullFeedback.substring(0, 500),
+                rated_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', id)
+            .eq('user_id', userId)
+            .select('id, rating, rating_feedback, rated_at')
+            .single();
 
-        console.log(`[Dream Rate API] Dream ${id} rated: ${rating}/5`);
+        if (error) throw error;
 
         return NextResponse.json({
             success: true,
             message: 'شكراً لتقييمك! رأيك يساعدنا على التحسين',
-            dream: {
-                _id: dream._id,
-                rating: dream.rating,
-                ratingFeedback: dream.ratingFeedback,
-                ratedAt: dream.ratedAt
-            }
+            dream: { _id: updated.id, rating: updated.rating, ratingFeedback: updated.rating_feedback, ratedAt: updated.rated_at },
         });
-
     } catch (error) {
         console.error('[Dream Rate API] Error:', error);
-        return NextResponse.json(
-            { error: 'حدث خطأ أثناء حفظ التقييم' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'حدث خطأ أثناء حفظ التقييم' }, { status: 500 });
     }
 }

@@ -1,9 +1,6 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/adminAuth';
-import Interpreter from '@/models/Interpreter';
-import AuditLog from '@/models/AuditLog';
-import dbConnect from '@/lib/mongodb';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function PATCH(
     req: NextRequest,
@@ -13,57 +10,62 @@ export async function PATCH(
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
         const { id } = params;
         const body = await req.json();
-
         const { status, price } = body;
 
-        const interpreter = await Interpreter.findById(id);
+        const { data: interpreter } = await supabaseAdmin
+            .from('interpreters')
+            .select('id, status, price, user_id')
+            .eq('id', id)
+            .maybeSingle();
+
         if (!interpreter) {
             return NextResponse.json({ error: 'Interpreter not found' }, { status: 404 });
         }
 
-        const updateData: any = {};
-        const auditDetails: any = { prevStatus: interpreter.status, prevPrice: interpreter.price };
-        let action: 'suspend_interpreter' | 'reactivate_interpreter' | 'approve_interpreter' | 'edit_price' | 'update_settings' = 'update_settings';
+        const updateData: Record<string, unknown> = {};
+        const auditDetails: Record<string, unknown> = {
+            prevStatus: interpreter.status,
+            prevPrice: interpreter.price,
+        };
+        let action: string = 'update_settings';
 
-        // Update Status
         if (status && ['active', 'suspended', 'pending'].includes(status)) {
             updateData.status = status;
             auditDetails.newStatus = status;
-
             if (status === 'suspended') action = 'suspend_interpreter';
             else if (status === 'active' && interpreter.status === 'pending') action = 'approve_interpreter';
             else if (status === 'active' && interpreter.status === 'suspended') action = 'reactivate_interpreter';
         }
 
-        // Update Price (Admin Override)
         if (price !== undefined && typeof price === 'number') {
             updateData.price = price;
             auditDetails.newPrice = price;
-            // Only set action to edit_price if status didn't change (or prioritize status change log)
             if (!status) action = 'edit_price';
         }
 
-        // Apply Updates
         if (Object.keys(updateData).length > 0) {
-            Object.assign(interpreter, updateData);
-            await interpreter.save();
+            await supabaseAdmin.from('interpreters').update(updateData).eq('id', id);
 
-            // Create Audit Log
-            await AuditLog.create({
-                adminUserId: auth.admin._id, // Mongo ID
-                adminEmail: auth.admin.email,
-                action: action,
-                targetType: 'interpreter',
-                targetId: interpreter._id, // Interpreter ID
+            await supabaseAdmin.from('audit_logs').insert({
+                admin_user_id: auth.admin.id,
+                admin_email: auth.admin.email,
+                action,
+                target_type: 'interpreter',
+                target_id: id,
                 details: auditDetails,
-                ipAddress: req.headers.get('x-forwarded-for') || 'unknown'
+                ip_address: req.headers.get('x-forwarded-for') || 'unknown',
             });
         }
 
-        return NextResponse.json({ interpreter });
+        const { data: updated } = await supabaseAdmin
+            .from('interpreters')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        return NextResponse.json({ interpreter: updated });
 
     } catch (error) {
         console.error('Update interpreter error:', error);

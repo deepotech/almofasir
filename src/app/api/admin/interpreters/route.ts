@@ -1,8 +1,6 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/adminAuth';
-import Interpreter from '@/models/Interpreter';
-import dbConnect from '@/lib/mongodb';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,32 +9,43 @@ export async function GET(req: NextRequest) {
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
-
         const { searchParams } = new URL(req.url);
         const status = searchParams.get('status');
         const search = searchParams.get('search');
 
-        const filter: any = {};
+        let query = supabaseAdmin
+            .from('interpreters')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-        // Filter by status if provided
         if (status && status !== 'all') {
-            filter.status = status;
+            query = query.eq('status', status);
         }
 
-        // Search by name or email
         if (search) {
-            filter.$or = [
-                { displayName: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } }
-            ];
+            query = query.or(`display_name.ilike.%${search}%,email.ilike.%${search}%`);
         }
 
-        const interpreters = await Interpreter.find(filter)
-            .select('userId displayName email interpretationType status price rating totalRatings completedDreams earnings pendingEarnings updatedAt')
-            .sort({ createdAt: -1 });
+        const { data: interpreters, error } = await query;
+        if (error) throw error;
 
-        return NextResponse.json({ interpreters });
+        const mapped = (interpreters || []).map(i => ({
+            _id: i.id,
+            userId: i.user_id,
+            displayName: i.display_name,
+            email: i.email,
+            interpretationType: i.interpretation_type,
+            status: i.status,
+            price: i.price,
+            rating: i.rating,
+            totalRatings: i.total_ratings,
+            completedDreams: i.completed_dreams,
+            earnings: i.earnings,
+            pendingEarnings: i.pending_earnings,
+            updatedAt: i.updated_at
+        }));
+
+        return NextResponse.json({ interpreters: mapped });
 
     } catch (error) {
         console.error('Fetch interpreters error:', error);

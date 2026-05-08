@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import Interpreter from '@/models/Interpreter';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 
@@ -9,18 +8,17 @@ initFirebaseAdmin();
 async function getUserId(req: NextRequest): Promise<string | null> {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) return null;
-
     const token = authHeader.split('Bearer ')[1];
     try {
         const decodedToken = await getAuth().verifyIdToken(token);
         return decodedToken.uid;
-    } catch (authError) {
+    } catch {
         if (process.env.NODE_ENV === 'development') {
             try {
                 const payload = token.split('.')[1];
                 const decodedValue = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
                 return decodedValue.user_id || decodedValue.sub || null;
-            } catch (e) {
+            } catch {
                 return null;
             }
         }
@@ -30,22 +28,24 @@ async function getUserId(req: NextRequest): Promise<string | null> {
 
 export async function GET(req: NextRequest) {
     try {
-        await dbConnect();
         const userId = await getUserId(req);
-        if (!userId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        const interpreter = await Interpreter.findOne({ userId });
-        if (!interpreter) {
+        const { data: interpreter, error } = await supabaseAdmin
+            .from('interpreters')
+            .select('price, response_time, pricing_note, last_price_update')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+        if (error || !interpreter) {
             return NextResponse.json({ error: 'Interpreter profile not found' }, { status: 404 });
         }
 
         return NextResponse.json({
             price: interpreter.price,
-            responseTime: interpreter.responseTime,
-            pricingNote: interpreter.pricingNote,
-            lastPriceUpdate: interpreter.lastPriceUpdate
+            responseTime: interpreter.response_time,
+            pricingNote: interpreter.pricing_note,
+            lastPriceUpdate: interpreter.last_price_update,
         });
     } catch (error) {
         console.error('Error fetching pricing:', error);
@@ -55,17 +55,13 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
     try {
-        await dbConnect();
         const userId = await getUserId(req);
-        if (!userId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const body = await req.json();
         const { price, responseTime, pricingNote } = body;
 
-        // Validation
-        if (typeof price !== 'number' || price < 5) { // Assuming 5 is strict min
+        if (typeof price !== 'number' || price < 5) {
             return NextResponse.json({ error: 'Invalid price. Minimum is 5.' }, { status: 400 });
         }
 
@@ -74,31 +70,44 @@ export async function PUT(req: NextRequest) {
             return NextResponse.json({ error: 'Invalid response time.' }, { status: 400 });
         }
 
-        const interpreter = await Interpreter.findOne({ userId });
-        if (!interpreter) {
+        const { data: interpreter, error } = await supabaseAdmin
+            .from('interpreters')
+            .select('price, last_price_update')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+        if (error || !interpreter) {
             return NextResponse.json({ error: 'Interpreter profile not found' }, { status: 404 });
         }
 
-        // Check 24 hour limit if price changed
-        if (interpreter.price !== price) {
-            if (interpreter.lastPriceUpdate) {
-                const now = new Date();
-                const diffTime = Math.abs(now.getTime() - new Date(interpreter.lastPriceUpdate).getTime());
-                const diffHours = Math.ceil(diffTime / (1000 * 60 * 60));
-                if (diffHours < 24) {
-                    return NextResponse.json({ error: `Cannot change price. Try again in ${24 - diffHours} hours.` }, { status: 429 });
-                }
+        // Check 24-hour price change limit
+        if (interpreter.price !== price && interpreter.last_price_update) {
+            const diffMs = Date.now() - new Date(interpreter.last_price_update).getTime();
+            const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
+            if (diffHours < 24) {
+                return NextResponse.json({
+                    error: `Cannot change price. Try again in ${24 - diffHours} hours.`
+                }, { status: 429 });
             }
-            interpreter.lastPriceUpdate = new Date();
         }
 
-        interpreter.price = price;
-        interpreter.responseTime = responseTime;
-        if (pricingNote !== undefined) interpreter.pricingNote = pricingNote;
+        const updates: Record<string, unknown> = {
+            price,
+            response_time: responseTime,
+        };
+        if (pricingNote !== undefined) updates.pricing_note = pricingNote;
+        if (interpreter.price !== price) updates.last_price_update = new Date().toISOString();
 
-        await interpreter.save();
+        const { data: updated, error: updateError } = await supabaseAdmin
+            .from('interpreters')
+            .update(updates)
+            .eq('user_id', userId)
+            .select()
+            .single();
 
-        return NextResponse.json({ success: true, interpreter });
+        if (updateError) throw updateError;
+
+        return NextResponse.json({ success: true, interpreter: updated });
     } catch (error) {
         console.error('Error updating pricing:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
+import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
 import { interpretDream } from '@/lib/dreamInterpreter';
 
@@ -18,38 +17,45 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing required parameters: orderId, dreamText' }, { status: 400 });
         }
 
-        await dbConnect();
+        const { data: order, error } = await supabaseAdmin
+            .from('dream_requests')
+            .select('status, interpretation_text, context')
+            .eq('id', orderId)
+            .single();
 
-        const order = await DreamRequest.findById(orderId);
-        if (!order) {
+        if (error || !order) {
             return NextResponse.json({ error: 'Order not found' }, { status: 404 });
         }
 
         // Idempotency guard: skip if already completed with real content
         if (
             order.status === 'completed' &&
-            order.interpretationText &&
-            !order.interpretationText.startsWith('جاري تحليل')
+            order.interpretation_text &&
+            !order.interpretation_text.startsWith('جاري تحليل')
         ) {
             logger.info('Job skipped (already completed)', { event: 'JOB_SKIPPED', orderId });
             return NextResponse.json({ success: true, message: 'Already completed' });
         }
 
-        // ── Run AI Interpretation ──────────────────────────────────────────────
+        // Run AI Interpretation
         logger.info('Starting AI interpretation', { event: 'AI_START', orderId });
 
         const result = await interpretDream(
             dreamText,
-            context || order.context, // prefer fresh payload, fallback to DB
-            2 // allow 2 retries in background job
+            context || order.context,
+            2 // allow 2 retries
         );
 
-        // ── Persist Result ─────────────────────────────────────────────────────
-        await DreamRequest.findByIdAndUpdate(orderId, {
-            interpretationText: result.text,
-            status: 'completed',
-            completedAt: new Date(),
-        });
+        // Persist Result
+        await supabaseAdmin
+            .from('dream_requests')
+            .update({
+                interpretation_text: result.text,
+                status: 'completed',
+                completed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', orderId);
 
         logger.info('QStash Job completed', {
             event: 'JOB_SUCCESS',

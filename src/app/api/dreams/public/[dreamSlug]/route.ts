@@ -1,71 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import Dream from '@/models/Dream';
+import { supabaseAdmin } from '@/lib/supabase';
 import { isMongoId } from '@/lib/slugify';
 
-/**
- * GET /api/dreams/public/[dreamSlug]
- * 
- * Strategy A: Lookup by seoSlug (single field, no migration, no self-healing writes).
- * Fallback to _id for backward compatibility.
- */
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ dreamSlug: string }> }
 ) {
     try {
-        await dbConnect();
         const { dreamSlug: slugOrId } = await params;
 
-        let dream;
+        let query = supabaseAdmin
+            .from('dreams')
+            .select('id, seo_slug, mood, created_at, tags, public_version')
+            .eq('visibility_status', 'public')
+            .not('public_version->content', 'is', null);
 
+        // UUID lookup (backward compat) vs slug lookup
         if (isMongoId(slugOrId)) {
-            // Direct ID lookup (backward compat)
-            dream = await Dream.findOne({
-                _id: slugOrId,
-                visibilityStatus: 'public',
-                'publicVersion.content': { $exists: true }
-            }).select('publicVersion tags mood createdAt seoSlug');
+            query = query.eq('id', slugOrId);
         } else {
-            // Slug-based lookup: seoSlug field
-            dream = await Dream.findOne({
-                seoSlug: slugOrId,
-                visibilityStatus: 'public',
-                'publicVersion.content': { $exists: true }
-            }).select('publicVersion tags mood createdAt seoSlug');
+            query = query.eq('seo_slug', slugOrId);
         }
 
-        if (!dream) {
+        const { data: dream, error } = await query.single();
+
+        if (error || !dream) {
             return NextResponse.json({ error: 'Dream not found' }, { status: 404 });
         }
 
-        const id = dream._id.toString();
-        const slug = dream.seoSlug || id;
+        const pv = dream.public_version || {};
 
         return NextResponse.json({
-            id,
-            slug,
-            title: dream.publicVersion.title,
-            content: dream.publicVersion.content,
-            interpretation: dream.publicVersion.interpretation,
-            structuredInterpretation: dream.publicVersion.structuredInterpretation,
-            comprehensiveInterpretation: dream.publicVersion.comprehensiveInterpretation,
-            seoIntro: dream.publicVersion.seoIntro,
-            faqs: dream.publicVersion.faqs,
+            id:    dream.id,
+            slug:  dream.seo_slug || dream.id,
+            title: pv.title,
+            content: pv.content,
+            interpretation: pv.interpretation,
+            structuredInterpretation: pv.structuredInterpretation,
+            comprehensiveInterpretation: pv.comprehensiveInterpretation,
+            seoIntro: pv.seoIntro,
+            faqs: pv.faqs,
             mood: dream.mood,
             tags: dream.tags,
-            date: dream.publicVersion.publishedAt || dream.createdAt,
+            date: pv.publishedAt || dream.created_at,
             publicVersion: {
-                title: dream.publicVersion.title,
-                content: dream.publicVersion.content,
-                seoIntro: dream.publicVersion.seoIntro,
-                interpretation: dream.publicVersion.interpretation,
-                structuredInterpretation: dream.publicVersion.structuredInterpretation,
-                comprehensiveInterpretation: dream.publicVersion.comprehensiveInterpretation,
-                faqs: dream.publicVersion.faqs,
-                publishDate: dream.publicVersion.publishedAt || dream.createdAt,
-                keywords: dream.tags,
-            }
+                title:                      pv.title,
+                content:                    pv.content,
+                seoIntro:                   pv.seoIntro,
+                interpretation:             pv.interpretation,
+                structuredInterpretation:   pv.structuredInterpretation,
+                comprehensiveInterpretation:pv.comprehensiveInterpretation,
+                faqs:                       pv.faqs,
+                publishDate:                pv.publishedAt || dream.created_at,
+                keywords:                   dream.tags,
+            },
         });
 
     } catch (error) {

@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withDbRetry } from '@/lib/mongodb';
-import Interpreter from '@/models/Interpreter';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getCachedOrFallback, setCache } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/interpreters - List all active interpreters
 export async function GET(req: NextRequest) {
     const startTime = Date.now();
     const { searchParams } = new URL(req.url);
@@ -16,82 +14,62 @@ export async function GET(req: NextRequest) {
     const cacheKey = `interpreters_t${type}_s${sortBy}_i${includeAll}`;
 
     try {
-        console.log('[DATA DEBUG] /api/interpreters called', { type, sortBy, includeAll });
+        let query = supabaseAdmin
+            .from('interpreters')
+            .select('*')
+            .neq('status', 'suspended');
 
-        const interpreters = await withDbRetry(async () => {
-            const query: Record<string, unknown> = { status: { $ne: 'suspended' } };
+        if (!includeAll) {
+            query = query.eq('is_active', true);
+            query = query.not('display_name', 'in', '("HICHAM EL MORSLI", "مفسر تجريبي", "Test Interpreter")');
+        }
 
-            if (!includeAll) {
-                query.isActive = true;
-                query.displayName = { $nin: ['HICHAM EL MORSLI', 'مفسر تجريبي', 'Test Interpreter'] };
-            }
+        if (type !== 'all' && ['religious', 'psychological', 'symbolic', 'mixed'].includes(type)) {
+            query = query.eq('interpretation_type', type);
+        }
 
-            if (type !== 'all' && ['religious', 'psychological', 'symbolic', 'mixed'].includes(type as string)) {
-                query.interpretationType = type;
-            }
+        if (sortBy === 'price') {
+            query = query.order('price', { ascending: true });
+        } else if (sortBy === 'responseTime') {
+            query = query.order('response_time', { ascending: true });
+        } else if (sortBy === 'dreams') {
+            query = query.order('completed_dreams', { ascending: false });
+        } else {
+            query = query.order('rating', { ascending: false });
+        }
 
-            let sort: Record<string, 1 | -1> = { rating: -1 };
-            if (sortBy === 'price') sort = { price: 1 };
-            else if (sortBy === 'responseTime') sort = { responseTime: 1 };
-            else if (sortBy === 'dreams') sort = { completedDreams: -1 };
+        const { data: interpreters, error } = await query;
+        if (error) throw error;
 
-            return Interpreter.find(query)
-                .select('-earnings -pendingEarnings -userId')
-                .sort(sort)
-                .lean();
-        }, 2, 5000); // 2 retries, 5 seconds timeout
-
-
-        console.log(`[DATA DEBUG] Interpreters fetched: ${interpreters.length} records`);
-
-        const formatted = interpreters.map((interpreter: any) => ({
-            id: interpreter._id,
-            displayName: interpreter.displayName,
+        const formatted = (interpreters || []).map((interpreter: any) => ({
+            id: interpreter.id,
+            displayName: interpreter.display_name,
             avatar: interpreter.avatar,
             bio: interpreter.bio,
-            interpretationType: interpreter.interpretationType,
-            interpretationTypeAr: getTypeArabic(interpreter.interpretationType),
+            interpretationType: interpreter.interpretation_type,
+            interpretationTypeAr: getTypeArabic(interpreter.interpretation_type),
             price: interpreter.price,
-            responseTime: interpreter.responseTime,
-            responseTimeText: getResponseTimeText(interpreter.responseTime),
+            responseTime: interpreter.response_time,
+            responseTimeText: getResponseTimeText(interpreter.response_time),
             rating: interpreter.rating || 0,
-            totalRatings: interpreter.totalRatings || 0,
-            completedDreams: interpreter.completedDreams || 0,
-            isActive: interpreter.isActive,
+            totalRatings: interpreter.total_ratings || 0,
+            completedDreams: interpreter.completed_dreams || 0,
+            isActive: interpreter.is_active,
             status: interpreter.status
         }));
 
-        const elapsed = Date.now() - startTime;
-        console.log(`[DATA DEBUG] ✅ Interpreters response: ${formatted.length}, ${elapsed}ms`);
+        const responseData = { count: formatted.length, interpreters: formatted, total: formatted.length };
+        await setCache(cacheKey, responseData, 3600);
 
-        const responseData = {
-            count: formatted.length,
-            interpreters: formatted,
-            total: formatted.length
-        };
-
-        await setCache(cacheKey, responseData, 3600); // cache for 1 hour
-
-        return NextResponse.json({
-            success: true,
-            ...responseData
-        });
+        return NextResponse.json({ success: true, ...responseData });
 
     } catch (error: any) {
-        const elapsed = Date.now() - startTime;
-        console.error(`[DB ERROR] ❌ /api/interpreters — Failed completely (${elapsed}ms):`, error?.message);
-
-        // Ultimate Resiliency: Return Cache or Mock Data!
+        console.error(`[DB ERROR] ❌ /api/interpreters — Failed completely:`, error?.message);
         const fallbackResponse = await getCachedOrFallback(cacheKey, 'interpreters');
-
-        return NextResponse.json({
-            success: true,
-            ...fallbackResponse
-        });
+        return NextResponse.json({ success: true, ...fallbackResponse });
     }
 }
 
-// Helper functions
 function getTypeArabic(type: string): string {
     const types: Record<string, string> = {
         'religious': 'شرعي',

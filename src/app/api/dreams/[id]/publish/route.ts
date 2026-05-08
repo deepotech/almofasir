@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import Dream from '@/models/Dream';
-import DreamRequest from '@/models/DreamRequest';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 import { slugifyArabic } from '@/lib/slugifyArabic';
@@ -59,8 +57,8 @@ async function generateUniqueSlug(title: string, tags: string[] = [], dreamId: s
     const MAX_ATTEMPTS = 20;
 
     while (suffix <= MAX_ATTEMPTS) {
-        const existing = await Dream.findOne({ seoSlug: candidateSlug }).select('_id').lean();
-        if (!existing || existing._id.toString() === dreamId) {
+        const { data: existing } = await supabaseAdmin.from('dreams').select('id').eq('seo_slug', candidateSlug).single();
+        if (!existing || existing.id === dreamId) {
             // Available or it's the same dream
             return candidateSlug;
         }
@@ -329,35 +327,35 @@ export async function POST(
             }
         }
 
-        let dream = await Dream.findById(id);
+        let { data: dream } = await supabaseAdmin.from('dreams').select('*').eq('id', id).single();
         let fromRequest = false;
 
-        // If not found in Dream collection, look in DreamRequest (New Flow)
         if (!dream) {
-            const dreamRequest = await DreamRequest.findById(id);
+            const { data: dreamRequest } = await supabaseAdmin.from('dream_requests').select('*').eq('id', id).single();
             if (dreamRequest) {
                 fromRequest = true;
-                if (dreamRequest.userId) {
-                    if (!userId || dreamRequest.userId !== userId) {
+                if (dreamRequest.user_id) {
+                    if (!userId || dreamRequest.user_id !== userId) {
                         return NextResponse.json({ error: 'Unauthorized: You do not own this dream request' }, { status: 401 });
                     }
                 }
 
-                dream = new Dream({
-                    userId: dreamRequest.userId,
-                    content: dreamRequest.dreamText,
+                dream = {
+                    id: dreamRequest.id,
+                    user_id: dreamRequest.user_id,
+                    content: dreamRequest.dream_text,
                     mood: dreamRequest.context?.dominantFeeling || 'neutral',
-                    socialStatus: dreamRequest.context?.socialStatus,
+                    social_status: dreamRequest.context?.socialStatus,
                     gender: dreamRequest.context?.gender,
-                    isRecurring: dreamRequest.context?.isRecurring || false,
+                    is_recurring: dreamRequest.context?.isRecurring || false,
                     interpretation: {
-                        summary: dreamRequest.interpretationText || 'تفسير آلي',
+                        summary: dreamRequest.interpretation_text || 'تفسير آلي',
                         aiGenerated: dreamRequest.type === 'AI',
                         isPremium: false
                     },
                     status: 'completed',
-                    createdAt: dreamRequest.createdAt
-                });
+                    created_at: dreamRequest.created_at
+                };
             }
         }
 
@@ -366,15 +364,15 @@ export async function POST(
         }
 
         // 2. Authorization Check (for existing Dreams)
-        if (!fromRequest && dream.userId) {
-            if (!userId || dream.userId !== userId) {
+        if (!fromRequest && dream.user_id) {
+            if (!userId || dream.user_id !== userId) {
                 return NextResponse.json({ error: 'Unauthorized: You do not own this dream' }, { status: 401 });
             }
         } else if (!fromRequest) {
             console.log('[Publish] Guest dream publishing allowed.');
         }
 
-        if (dream.isPublic) {
+        if (dream.is_public) {
             return NextResponse.json({ message: 'Dream is already public' }, { status: 200 });
         }
 
@@ -382,9 +380,13 @@ export async function POST(
         const wordCount = dream.content.trim().split(/\s+/).length;
         if (wordCount < 10) {
             console.log(`[Publish] Dream rejected: Too short (${wordCount} words)`);
-            dream.visibilityStatus = 'rejected';
-            dream.publicVersion = { rejectionReason: 'Too short' };
-            await dream.save();
+            dream.visibility_status = 'rejected';
+            dream.public_version = { rejectionReason: 'Too short' };
+            await supabaseAdmin.from('dreams').upsert({
+                id: dream.id,
+                visibility_status: dream.visibility_status,
+                public_version: dream.public_version
+            });
             return NextResponse.json({ success: false, reason: 'min_length' });
         }
 
@@ -594,10 +596,10 @@ export async function POST(
             const userMessage = `
 نص الحلم: ${dream.content}
 
-الحالة الاجتماعية (إن وُجدت): ${dream.socialStatus || "غير محدد"}
+الحالة الاجتماعية (إن وُجدت): ${dream.social_status || "غير محدد"}
 المشاعر الظاهرة: ${dream.mood || "غير مذكور"}
 
-ملاحظات/سياق إضافي (اختياري): ${dream.isRecurring ? 'الحلم متكرر' : 'لا يوجد'}
+ملاحظات/سياق إضافي (اختياري): ${dream.is_recurring ? 'الحلم متكرر' : 'لا يوجد'}
 `;
 
             const MAX_RETRIES = 2;
@@ -680,11 +682,15 @@ export async function POST(
 
                     // ── Archive decision = stop immediately ──
                     if (result.decision === 'Archive') {
-                        dream.visibilityStatus = 'rejected';
-                        dream.publicVersion = {
+                        dream.visibility_status = 'rejected';
+                        dream.public_version = {
                             rejectionReason: result.reason || 'AI decided to archive'
                         };
-                        await dream.save();
+                        await supabaseAdmin.from('dreams').upsert({
+                            id: dream.id,
+                            visibility_status: dream.visibility_status,
+                            public_version: dream.public_version
+                        });
                         return NextResponse.json({ success: false, reason: 'archived', details: result.reason });
                     }
 
@@ -760,27 +766,30 @@ ${legacySymbolsList}
                         interpretation: formattedLegacyInterpretation,
                         faqs: article.faqs,
                         isAnonymous: true,
-                        publishedAt: new Date(),
+                        publishedAt: new Date().toISOString(),
                         qualityScore: calculatedQualityScore
                     };
-                    dream.isPublic = true;
-                    dream.visibilityStatus = 'public';
+                    dream.is_public = true;
+                    dream.visibility_status = 'public';
                     if (article.keywords) dream.tags = article.keywords;
 
                     // ── Generate SEO slug for NEW article ──
-                    if (!dream.seoSlug) {
-                        const dreamId = dream._id.toString();
+                    if (!dream.seo_slug) {
+                        const dreamId = dream.id;
                         const slugTitle = article.metaTitle || article.title || dream.content?.slice(0, 100) || '';
-                        dream.seoSlug = await generateUniqueSlug(slugTitle, dream.tags, dreamId);
-                        console.log(`[Publish] Generated seoSlug: "${dream.seoSlug}" for dream ${dreamId}`);
+                        dream.seo_slug = await generateUniqueSlug(slugTitle, dream.tags, dreamId);
+                        console.log(`[Publish] Generated seoSlug: "${dream.seo_slug}" for dream ${dreamId}`);
                     }
 
-                    await dream.save();
+                    await supabaseAdmin.from('dreams').upsert({
+                        ...dream,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', dream.id);
 
                     return NextResponse.json({
                         success: true,
                         message: `Dream published (attempt ${attempt <= MAX_RETRIES + 1 ? attempt : MAX_RETRIES + 1}, score: ${calculatedQualityScore})`,
-                        slug: dream.seoSlug,
+                        slug: dream.seo_slug,
                         qualityScore: calculatedQualityScore,
                         validationPassed: lastValidation.valid,
                         totalWords: countArticleWords(article)
@@ -795,26 +804,28 @@ ${legacySymbolsList}
         // Fallback or No API Key (Dev Mode)
         console.warn('AI analysis skipped or failed. Publishing raw (Dev Mode).');
 
-        dream.publicVersion = {
+        dream.public_version = {
             title: dream.title || 'حلم مفسر',
             content: dream.content,
             interpretation: dream.interpretation?.summary || 'تفسير عام',
             isAnonymous: true,
-            publishedAt: new Date(),
-            qualityScore: 60 // Base score for fallback
+            publishedAt: new Date().toISOString(),
+            qualityScore: 60
         };
-        dream.isPublic = true;
-        dream.visibilityStatus = 'public';
+        dream.is_public = true;
+        dream.visibility_status = 'public';
 
-        // ── Generate SEO slug for fallback publish too ──
-        if (!dream.seoSlug) {
-            const dreamId = dream._id.toString();
+        if (!dream.seo_slug) {
+            const dreamId = dream.id;
             const slugTitle = dream.title || dream.content?.slice(0, 100) || '';
-            dream.seoSlug = await generateUniqueSlug(slugTitle, dream.tags || [], dreamId);
-            console.log(`[Publish/Fallback] Generated seoSlug: "${dream.seoSlug}" for dream ${dreamId}`);
+            dream.seo_slug = await generateUniqueSlug(slugTitle, dream.tags || [], dreamId);
+            console.log(`[Publish/Fallback] Generated seoSlug: "${dream.seo_slug}" for dream ${dreamId}`);
         }
 
-        await dream.save();
+        await supabaseAdmin.from('dreams').upsert({
+            ...dream,
+            updated_at: new Date().toISOString()
+        }).eq('id', dream.id);
 
         return NextResponse.json({ success: true, message: 'Dream published (fallback)', slug: dream.seoSlug });
 

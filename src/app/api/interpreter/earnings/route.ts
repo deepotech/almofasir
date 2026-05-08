@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import Transaction from '@/models/Transaction';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken, initFirebaseAdmin } from '@/lib/firebase-admin';
 
 initFirebaseAdmin();
@@ -9,9 +8,6 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
     try {
-        await dbConnect();
-
-        // 1. Auth Check
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -21,62 +17,74 @@ export async function GET(req: NextRequest) {
         let userId: string;
 
         try {
-            const decodedToken = await verifyIdToken(token);
-            userId = decodedToken.uid;
-        } catch (authError) {
-            console.error('Auth verify failed:', authError);
+            userId = (await verifyIdToken(token)).uid;
+        } catch {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // 2. Fetch Transactions (History)
-        const transactions = await Transaction.find({ userId })
-            .sort({ createdAt: -1 }) // Newest first
-            .limit(50) // Limit to 50 for now
-            .lean();
+        const { data: transactions } = await supabaseAdmin
+            .from('transactions')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(50);
 
-        // 3. Calculate Monthly Earnings (for the comparison card)
         const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const startOfLastMonth = lastMonthStart.toISOString();
+        
+        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+        lastMonthEnd.setHours(23, 59, 59, 999);
+        const endOfLastMonth = lastMonthEnd.toISOString();
 
-        const currentMonthEarnings = await Transaction.aggregate([
-            {
-                $match: {
-                    userId,
-                    type: 'earning',
-                    status: 'completed',
-                    createdAt: { $gte: startOfMonth }
-                }
-            },
-            { $group: { _id: null, total: { $sum: '$amount' } } }
-        ]);
+        const { data: currentMonthEarningsData } = await supabaseAdmin
+            .from('transactions')
+            .select('amount')
+            .eq('user_id', userId)
+            .eq('type', 'earning')
+            .eq('status', 'completed')
+            .gte('created_at', startOfMonth);
 
-        const lastMonthEarnings = await Transaction.aggregate([
-            {
-                $match: {
-                    userId,
-                    type: 'earning',
-                    status: 'completed',
-                    createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth }
-                }
-            },
-            { $group: { _id: null, total: { $sum: '$amount' } } }
-        ]);
+        const { data: lastMonthEarningsData } = await supabaseAdmin
+            .from('transactions')
+            .select('amount')
+            .eq('user_id', userId)
+            .eq('type', 'earning')
+            .eq('status', 'completed')
+            .gte('created_at', startOfLastMonth)
+            .lte('created_at', endOfLastMonth);
 
-        const thisMonthTotal = currentMonthEarnings[0]?.total || 0;
-        const lastMonthTotal = lastMonthEarnings[0]?.total || 0;
+        let thisMonthTotal = 0;
+        (currentMonthEarningsData || []).forEach(t => thisMonthTotal += t.amount);
 
-        // Calculate percentage change
+        let lastMonthTotal = 0;
+        (lastMonthEarningsData || []).forEach(t => lastMonthTotal += t.amount);
+
         let percentageChange = 0;
         if (lastMonthTotal > 0) {
             percentageChange = ((thisMonthTotal - lastMonthTotal) / lastMonthTotal) * 100;
         } else if (thisMonthTotal > 0) {
-            percentageChange = 100; // 100% increase if last month was 0
+            percentageChange = 100;
         }
 
+        // Map transactions to standard camelCase
+        const mappedTx = (transactions || []).map(t => ({
+            _id: t.id,
+            userId: t.user_id,
+            type: t.type,
+            amount: t.amount,
+            currency: t.currency,
+            status: t.status,
+            description: t.description,
+            relatedEntityId: t.related_entity_id,
+            relatedEntityType: t.related_entity_type,
+            createdAt: t.created_at
+        }));
+
         return NextResponse.json({
-            transactions: transactions,
+            transactions: mappedTx,
             thisMonthTotal,
             lastMonthTotal,
             percentageChange

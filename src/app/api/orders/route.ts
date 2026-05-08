@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-import User from '@/models/User';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 import crypto from 'crypto';
@@ -15,50 +12,49 @@ import { interpretDream, buildContextString } from '@/lib/dreamInterpreter';
 
 initFirebaseAdmin();
 
-
-
-/**
- * GET /api/orders
- * Fetch user's orders with optional type filter
- */
 export async function GET(req: NextRequest) {
     try {
-        await dbConnect();
-
-        // Auth check
         const authHeader = req.headers.get('Authorization');
-        if (!authHeader?.startsWith('Bearer ')) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
+        if (!authHeader?.startsWith('Bearer ')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const token = authHeader.split('Bearer ')[1];
+        
         let userId: string;
-
         try {
-            const decodedToken = await getAuth().verifyIdToken(token);
-            userId = decodedToken.uid;
-        } catch (authError) {
-            console.error('[GET /api/orders] Auth failed:', authError);
+            userId = (await getAuth().verifyIdToken(token)).uid;
+        } catch {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Parse query params
         const { searchParams } = new URL(req.url);
-        const typeFilter = searchParams.get('type'); // 'AI' | 'HUMAN' | null
+        const typeFilter = searchParams.get('type');
 
-        // Build query
-        const query: any = { userId };
+        let query = supabaseAdmin
+            .from('dream_requests')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+
         if (typeFilter) {
-            query.type = typeFilter;
+            query = query.eq('type', typeFilter);
         }
 
-        // Fetch orders
-        const orders = await DreamRequest.find(query)
-            .sort({ createdAt: -1 })
-            .lean();
+        const { data: orders } = await query;
+        
+        // Map to Mongoose-like structure for frontend compat
+        const mappedOrders = (orders ?? []).map(o => ({
+            _id: o.id,
+            userId: o.user_id,
+            type: o.type,
+            dreamText: o.dream_text,
+            context: o.context,
+            status: o.status,
+            createdAt: o.created_at,
+            interpreterName: o.interpreter_name,
+            lockedPrice: o.locked_price,
+            interpretationText: o.interpretation_text
+        }));
 
-        return NextResponse.json({ success: true, orders });
-
+        return NextResponse.json({ success: true, orders: mappedOrders });
     } catch (error) {
         console.error('[GET /api/orders] Error:', error);
         return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 });
@@ -66,23 +62,17 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-    console.log('ORDER CREATED FROM:', 'API /orders', Date.now());
-    console.log('[API] POST /api/orders (Strict Flow)');
     try {
         const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
         const { success: rateLimitSuccess } = await verifyRateLimit(ip);
         if (!rateLimitSuccess) {
-            logger.warn('Rate limit on /api/orders rejected', { event: 'RATELIMIT_REJECTED', ip });
             return NextResponse.json({ success: false, error: 'Too many requests.', data: null }, { status: 429 });
         }
 
-        await dbConnect();
-
-        let userId: string = '';
-        let userEmail: string = '';
+        let userId = '';
+        let userEmail = '';
         let isGuest = false;
 
-        // 1. Identify User (Token or Guest)
         const authHeader = req.headers.get('Authorization');
         const body = await req.json();
 
@@ -92,244 +82,122 @@ export async function POST(req: NextRequest) {
                 const decodedToken = await getAuth().verifyIdToken(token);
                 userId = decodedToken.uid;
                 userEmail = decodedToken.email || '';
-            } catch (authError) {
-                // Add development fallback for local testing
+            } catch {
                 if (process.env.NODE_ENV === 'development') {
-                    console.warn('[API /api/orders] Auth verification failed, falling back to insecure decoding for development.');
                     try {
                         const payload = token.split('.')[1];
-                        const decodedValue = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
-                        userId = decodedValue.user_id || decodedValue.sub;
-                        userEmail = decodedValue.email || '';
-                        if (!userId) throw new Error('No user_id in token');
-                    } catch (decodeError) {
-                        console.error('[API /api/orders] Fallback decode failed:', decodeError);
-                        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-                    }
+                        const d = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
+                        userId = d.user_id || d.sub;
+                        userEmail = d.email || '';
+                    } catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
                 } else {
-                    console.error('[API] Auth failed:', authError);
                     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
                 }
             }
         } else {
-            // GUEST MODE
-            // If no auth header, generating a temporary guest ID is NOT sufficient for strict enforcement.
-            // We must rely on a persistent client identifier (x-guest-id).
             const { type } = body;
-
-            // Only allow AI for guests
-            if (type !== 'AI') {
-                return NextResponse.json({ error: 'Unauthorized. Please login.' }, { status: 401 });
-            }
-
+            if (type !== 'AI') return NextResponse.json({ error: 'Unauthorized. Please login.' }, { status: 401 });
             const guestIdHeader = req.headers.get('x-guest-id');
             if (guestIdHeader) {
-                userId = guestIdHeader; // Use client-provided persistent ID
+                userId = guestIdHeader;
                 isGuest = true;
-                console.log(`[API] Guest Request detected with Persistent ID: ${userId}`);
             } else {
-                // Soft fallback or Strict Deny? 
-                // Strict Mode: "Guest... 1 lifetime...". logic implies we need a stable ID.
-                // If client didn't send one, we can generate one but we MUST tell client to save it? 
-                // Or we deny?
-                // Let's allow generation but logs will show it as new guest. 
-                // Ideally frontend ALWAYS sends it.
                 userId = `guest_${crypto.randomUUID()}`;
                 isGuest = true;
-                console.log(`[API] Guest Request WITHOUT ID. Assigned ephemeral: ${userId}`);
             }
         }
 
-        if (!userId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { type, dreamText, context, interpreter, interpreterId, interpreterName } = body;
 
-        // Validate type
         if (!type || !['AI', 'HUMAN'].includes(type)) {
             return NextResponse.json({ error: 'Invalid type. Must be AI or HUMAN.' }, { status: 400 });
         }
 
         if (!dreamText || dreamText.trim().split(/\s+/).filter(Boolean).length < 15) {
-            return NextResponse.json({
-                error: 'حلمك قصير جداً. يرجى وصف الحلم بتفاصيل أكثر (15 كلمة على الأقل).',
-                code: 'DREAM_TOO_SHORT'
-            }, { status: 400 });
+            return NextResponse.json({ error: 'حلمك قصير جداً. يرجى وصف الحلم بتفاصيل أكثر (15 كلمة على الأقل).', code: 'DREAM_TOO_SHORT' }, { status: 400 });
         }
 
-        // ============================================================
-        // IDEMPOTENCY KEY GENERATION (The Core Protection)
-        // sha256(userId + "_" + dreamText_first100 + "_" + interpreterId + "_" + type)
-        // This ensures the same user sending the same dream to same interpreter gets same order
-        // ============================================================
-        const normalizedDreamText = dreamText.trim().substring(0, 100).toLowerCase(); // Normalize text
-        const safeInterpreterId = interpreterId || 'any'; // Handle AI or undefined
+        const normalizedDreamText = dreamText.trim().substring(0, 100).toLowerCase();
+        const safeInterpreterId = interpreterId || 'any';
         const rawKey = `${userId}_${normalizedDreamText}_${safeInterpreterId}_${type}`;
         const idempotencyKey = crypto.createHash('sha256').update(rawKey).digest('hex');
-
-        console.log('[IDEMPOTENCY] Key generated:', {
-            userId: userId.substring(0, 8),
-            dreamPreview: normalizedDreamText.substring(0, 30),
-            interpreterId: safeInterpreterId,
-            type,
-            key: idempotencyKey.substring(0, 16) + '...'
-        });
-
-        // Also keep legacy dreamHash for broader duplicate search if needed
         const dreamHash = crypto.createHash('sha256').update(`${userId}_${dreamText.trim().toLowerCase()}`).digest('hex');
 
-        // ============================================================
-        // TRANSACTION START
-        // ============================================================
-        const conn = await dbConnect();
-        const session = await conn.startSession();
-        let result: any = null;
-
-        await session.withTransaction(async () => {
-            // 2. STRICT ACCESS CONTROL (Inside Transaction)
-            // MOVED UP for scoping
-            console.error('🔥 ORDER CREATE TRIGGERED', {
-                sourceFile: 'src/app/api/orders/route.ts',
-                timestamp: new Date().toISOString(),
-                stack: new Error().stack,
-            });
-            let dbUser = null;
-            let useFreeDaily = false;
-            let useCredit = false;
-
-            // Call strict validator
-            const access = await validateAccess(userId, isGuest, session);
-
-            if (!access.allowed) {
-                const error = new Error(access.reason.toUpperCase());
-                (error as any).status = 403;
-                (error as any).details = {
-                    code: access.reason.toUpperCase(),
-                    nextReset: access.nextReset
-                };
-                throw error;
-            }
-
-            // Map allowed mode to local flags
-            if (access.mode === 'free') useFreeDaily = true;
-            if (access.mode === 'credit') useCredit = true;
-            // Guest mode implies free daily effectively (but handled as 'guest' mode logic if needed, 
-            // though for Guest, we just proceed. We need to fetch DB user if NOT guest).
-
-            if (!isGuest) {
-                dbUser = await User.findOne({ firebaseUid: userId }).session(session);
-            }
-
-            // 3. ATOMIC UPSERT (The Real Fix)
-            // Instead of findOne -> create, we use findOneAndUpdate with upsert=true
-            // This relies on the unique index on `idempotencyKey` effectively, but handles race conditions better at DB level
-
-            // Prepare the document to insert/update
-            const now = new Date();
-            const sanitizedContext = {
-                gender: context?.gender,
-                socialStatus: context?.socialStatus,
-                dominantFeeling: context?.dominantFeeling,
-                isRecurring: context?.isRecurring
-            };
-
-            // Define update operations
-            const updateOp = {
-                $setOnInsert: {
-                    type,
-                    userId,
-                    userEmail,
-                    dreamText: dreamText.trim(),
-                    dreamHash,
-                    idempotencyKey,
-                    context: sanitizedContext,
-                    interpreterId: interpreterId || undefined,
-                    interpreterName: interpreterName || undefined,
-                    price: (type === 'AI' && !useFreeDaily) ? 1 : 0,
-                    lockedPrice: 0,
-                    status: type === 'AI' ? 'in_progress' : 'new',
-                    paymentStatus: type === 'AI' ? 'paid' : 'pending',
-                    startedAt: type === 'AI' ? now : undefined,
-                    assignedAt: type === 'AI' ? now : undefined,
-                }
-            };
-
-            const newOrder = await DreamRequest.findOneAndUpdate(
-                { idempotencyKey },
-                updateOp,
-                {
-                    upsert: true,
-                    new: true,
-                    session,
-                    setDefaultsOnInsert: true
-                }
-            );
-
-            // Logic: If the doc existed, $setOnInsert did nothing.
-            // If we want to know if it's new, we can check `createdAt` vs `now`.
-            const isNew = Math.abs(newOrder.createdAt.getTime() - now.getTime()) < 2000;
-
-            console.log('[UPSERT RESULT]', {
-                orderId: newOrder._id.toString(),
-                isNew: isNew,
-                status: newOrder.status,
-                createdAt: newOrder.createdAt,
-                interpreterId: newOrder.interpreterId || 'none'
-            });
-
-            if (!isNew) {
-                console.log(`[API] ⚠️ IDEMPOTENCY HIT: Returning existing order ${newOrder._id}`);
-                result = {
-                    order: newOrder,
-                    isDuplicate: true,
-                    mode: 'existing'
-                };
-                return; // Return from transaction loop
-            }
-
-            console.log(`[API] ✅ NEW ORDER CREATED: ${newOrder._id}`);
-
-            // 4. Update User Credits (AI Only)
-            if (type === 'AI' && !isGuest && dbUser) {
-                if (useFreeDaily) {
-                    dbUser.lastFreeDreamAt = new Date();
-                } else if (useCredit) {
-                    dbUser.credits -= 1;
-                }
-                await dbUser.save({ session });
-            }
-
-            result = {
-                order: newOrder,
-                isDuplicate: false,
-                user: dbUser,
-                mode: useFreeDaily ? 'free' : 'credit'
-            };
-        });
-
-        await session.endSession();
-
-        if (!result) return NextResponse.json({ error: 'Transaction failed' }, { status: 500 });
-
-        const { order, isDuplicate } = result;
-
-        // ============================================================
-        // SIDE EFFECTS (OUTSIDE TRANSACTION)
-        // ============================================================
-
-        // A) If duplicate, just return it
-        if (isDuplicate) {
-            return NextResponse.json({
-                success: true,
-                upsert: true,
-                orderId: order._id,
-                order: order,
-                message: 'Returned existing order'
-            });
+        // Access validation
+        const access = await validateAccess(userId, isGuest);
+        if (!access.allowed) {
+            return NextResponse.json({ success: false, error: access.reason.toUpperCase(), data: null }, { status: 403 });
         }
 
-        // B) Run AI if needed
+        const useFreeDaily = access.mode === 'free';
+        const useCredit = access.mode === 'credit';
+        const now = new Date().toISOString();
+        const sanitizedContext = { gender: context?.gender, socialStatus: context?.socialStatus, dominantFeeling: context?.dominantFeeling, isRecurring: context?.isRecurring };
+
+        // Atomic Upsert via Supabase (since we have a unique constraint on idempotency_key)
+        const insertData = {
+            type,
+            user_id: userId,
+            user_email: userEmail,
+            dream_text: dreamText.trim(),
+            dream_hash: dreamHash,
+            idempotency_key: idempotencyKey,
+            context: sanitizedContext,
+            interpreter_id: interpreterId || null,
+            interpreter_name: interpreterName || null,
+            price: (type === 'AI' && !useFreeDaily) ? 1 : 0,
+            locked_price: 0,
+            status: type === 'AI' ? 'in_progress' : 'new',
+            payment_status: type === 'AI' ? 'paid' : 'pending',
+            started_at: type === 'AI' ? now : null,
+            assigned_at: type === 'AI' ? now : null,
+        };
+
+        const { data: newOrder, error: upsertError } = await supabaseAdmin
+            .from('dream_requests')
+            .upsert(insertData, { onConflict: 'idempotency_key', ignoreDuplicates: true })
+            .select()
+            .single();
+
+        let isDuplicate = false;
+        let finalOrder = newOrder;
+
+        if (upsertError || !newOrder) {
+            // It was a duplicate
+            const { data: existing } = await supabaseAdmin.from('dream_requests').select('*').eq('idempotency_key', idempotencyKey).single();
+            finalOrder = existing;
+            isDuplicate = true;
+        }
+
+        let dbUser = null;
+        if (!isDuplicate && type === 'AI' && !isGuest) {
+            // Deduct credits or update free dream
+            if (useFreeDaily) {
+                const { data } = await supabaseAdmin.from('users').update({ last_free_dream_at: now }).eq('firebase_uid', userId).select().single();
+                dbUser = data;
+            } else if (useCredit) {
+                // decrement via rpc or read-update
+                const { data: userCurrent } = await supabaseAdmin.from('users').select('credits').eq('firebase_uid', userId).single();
+                const newCredits = Math.max(0, (userCurrent?.credits || 0) - 1);
+                const { data } = await supabaseAdmin.from('users').update({ credits: newCredits }).eq('firebase_uid', userId).select().single();
+                dbUser = data;
+            }
+        }
+
+        // Map final order to Mongoose style
+        const orderDoc = {
+            _id: finalOrder.id,
+            status: finalOrder.status,
+            createdAt: finalOrder.created_at,
+            context: finalOrder.context
+        };
+
+        if (isDuplicate) {
+            return NextResponse.json({ success: true, upsert: true, orderId: orderDoc._id, order: orderDoc, message: 'Returned existing order' });
+        }
+
         let interpretationText = '';
         let responseSymbols: any[] = [];
         let responseConfidence = 0;
@@ -337,75 +205,56 @@ export async function POST(req: NextRequest) {
 
         if (type === 'AI') {
             try {
-                const interpreterKey = (interpreter as InterpreterId) in interpreters
-                    ? (interpreter as InterpreterId)
-                    : 'ibn-sirin';
-                const contextString = buildContextString(order.context);
+                const interpreterKey = (interpreter as InterpreterId) in interpreters ? (interpreter as InterpreterId) : 'ibn-sirin';
+                const contextString = buildContextString(orderDoc.context);
 
                 let qstashDispatched = false;
-
                 if (hasQstashConfig) {
                     try {
-                        // Pass structured context to background job
                         await dispatchToQStash('/api/jobs/process-dream', {
-                            orderId: order._id,
+                            orderId: orderDoc._id,
                             dreamText,
-                            context: order.context,
+                            context: orderDoc.context,
                             contextString,
                             interpreterKey,
                         });
                         interpretationText = 'جاري تحليل الحلم الآن... يرجى التحقق من قسم الأحلام لاحقاً.';
                         qstashDispatched = true;
-                    } catch (err) {
-                        logger.error('QStash failed, falling back to direct execution', { event: 'QSTASH_FALLBACK' }, err);
-                    }
+                    } catch (err) { logger.error('QStash failed', { event: 'QSTASH_FALLBACK' }, err); }
                 }
 
                 if (!qstashDispatched) {
-                    // Direct interpretation using unified engine
-                    const aiResult = await interpretDream(dreamText, order.context, 1);
+                    const aiResult = await interpretDream(dreamText, orderDoc.context, 1);
                     interpretationText = aiResult.text;
                     responseSymbols = aiResult.symbols;
                     responseConfidence = aiResult.confidenceScore;
                     responseType = aiResult.type;
 
-                    // Update order with enriched result
-                    await DreamRequest.findByIdAndUpdate(order._id, {
-                        interpretationText,
+                    await supabaseAdmin.from('dream_requests').update({
+                        interpretation_text: interpretationText,
                         status: 'completed',
-                        completedAt: new Date(),
-                    });
+                        completed_at: new Date().toISOString()
+                    }).eq('id', orderDoc._id);
                 }
             } catch (e) {
-                logger.error('AI interpretation error in /api/orders', { event: 'AI_ERROR' }, e);
+                logger.error('AI error', { event: 'AI_ERROR' }, e);
                 interpretationText = 'حدث خطأ غير متوقع أثناء التفسير. يرجى المحاولة مجدداً.';
             }
         }
 
         return NextResponse.json({
             success: true,
-            orderId: order._id,
-            order: order,
+            orderId: orderDoc._id,
+            order: orderDoc,
             interpretation: interpretationText,
             symbols: responseSymbols,
             type: responseType,
             confidenceScore: responseConfidence,
-            remainingCredits: result.user ? result.user.credits : 0,
+            remainingCredits: dbUser ? dbUser.credits : 0,
         });
 
     } catch (error: any) {
         console.error('[API] Order Global Error:', error);
-        const status = (error as any).status || 500;
-        let errorMessage = error.message || 'Internal Error';
-        
-        // Sanitize database connection errors for the end-user
-        if (errorMessage.includes('MongoDB') || errorMessage.includes('Atlas') || errorMessage.includes('MongoTimeout')) {
-            errorMessage = 'حدث خطأ في الاتصال بقاعدة البيانات. يرجى المحاولة لاحقاً.';
-        }
-
-        return NextResponse.json(
-            { success: false, error: errorMessage, data: null },
-            { status }
-        );
+        return NextResponse.json({ success: false, error: 'Internal Error', data: null }, { status: 500 });
     }
 }

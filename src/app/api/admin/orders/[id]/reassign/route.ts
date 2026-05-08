@@ -1,10 +1,6 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/adminAuth';
-import DreamRequest from '@/models/DreamRequest';
-import Interpreter from '@/models/Interpreter';
-import AuditLog from '@/models/AuditLog';
-import dbConnect from '@/lib/mongodb';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(
     req: NextRequest,
@@ -14,7 +10,6 @@ export async function POST(
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
         const { id } = params;
         const { newInterpreterId } = await req.json();
 
@@ -22,43 +17,58 @@ export async function POST(
             return NextResponse.json({ error: 'New interpreter ID is required' }, { status: 400 });
         }
 
-        const order = await DreamRequest.findById(id);
+        const { data: order } = await supabaseAdmin
+            .from('dream_requests')
+            .select('id, status, interpreter_id')
+            .eq('id', id)
+            .maybeSingle();
+
         if (!order) {
             return NextResponse.json({ error: 'Order not found' }, { status: 404 });
         }
 
-        const newInterpreter = await Interpreter.findById(newInterpreterId);
+        const { data: newInterpreter } = await supabaseAdmin
+            .from('interpreters')
+            .select('id, user_id, display_name')
+            .eq('id', newInterpreterId)
+            .maybeSingle();
+
         if (!newInterpreter) {
             return NextResponse.json({ error: 'Target interpreter not found' }, { status: 404 });
         }
 
-        const oldInterpreterId = order.interpreterId;
+        const oldInterpreterId = order.interpreter_id;
 
-        // Update Order
-        order.interpreterId = newInterpreterId; // ID from Interpreter model
-        order.interpreterUserId = newInterpreter.userId;
-        order.interpreterName = newInterpreter.displayName;
-        order.status = 'assigned'; // Reset status to assigned
-        order.assignedAt = new Date();
+        const { data: updatedOrder, error } = await supabaseAdmin
+            .from('dream_requests')
+            .update({
+                interpreter_id: newInterpreterId,
+                interpreter_user_id: newInterpreter.user_id,
+                interpreter_name: newInterpreter.display_name,
+                status: 'assigned',
+                assigned_at: new Date().toISOString(),
+            })
+            .eq('id', id)
+            .select()
+            .single();
 
-        await order.save();
+        if (error) throw error;
 
-        // Audit Log
-        await AuditLog.create({
-            adminUserId: auth.admin._id,
-            adminEmail: auth.admin.email,
+        await supabaseAdmin.from('audit_logs').insert({
+            admin_user_id: auth.admin.id,
+            admin_email: auth.admin.email,
             action: 'reassign_order',
-            targetType: 'order',
-            targetId: order._id,
+            target_type: 'order',
+            target_id: id,
             details: {
                 oldInterpreter: oldInterpreterId,
                 newInterpreter: newInterpreterId,
-                reason: 'Admin reassignment'
+                reason: 'Admin reassignment',
             },
-            ipAddress: req.headers.get('x-forwarded-for')
+            ip_address: req.headers.get('x-forwarded-for'),
         });
 
-        return NextResponse.json({ success: true, order });
+        return NextResponse.json({ success: true, order: updatedOrder });
 
     } catch (error) {
         console.error('Reassign order error:', error);

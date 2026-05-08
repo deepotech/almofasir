@@ -1,9 +1,8 @@
 
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import dbConnect, { withDbRetry } from '@/lib/mongodb';
-import Dream from '@/models/Dream';
-import { generateSlug, isMongoId, generateSeoTitle, generateMetaDescription } from '@/lib/slugify';
+import { supabaseAdmin } from '@/lib/supabase';
+import { generateSlug, generateSeoTitle, generateMetaDescription } from '@/lib/slugify';
 import { fallbackDreamDetails, fallbackDreams } from '@/lib/fallbackData';
 import { generateArticleSchema, generateBreadcrumbSchema, generateFAQSchema, generateDreamListSchema } from '@/lib/seo';
 import Header from '@/components/layout/Header';
@@ -16,43 +15,44 @@ export const dynamic = 'force-dynamic';
 const BASE_URL = 'https://almofasir.com';
 
 /**
- * Strategy A: Lookup by seoSlug (single source of truth for URL).
+ * Fetch a public dream by seo_slug (primary) or id (UUID fallback).
  */
 async function getDream(slugOrId: string) {
     try {
-        const dream = await withDbRetry(async () => {
-            // 1. Try seoSlug (primary — this is the canonical URL field)
-            let d = await Dream.findOne({
-                seoSlug: slugOrId,
-                visibilityStatus: 'public',
-                'publicVersion.content': { $exists: true }
-            }).lean();
+        // 1. Try seo_slug (canonical URL field)
+        const { data: bySlug } = await supabaseAdmin
+            .from('dreams')
+            .select('*')
+            .eq('seo_slug', slugOrId)
+            .eq('visibility_status', 'public')
+            .not('public_version', 'is', null)
+            .single();
 
-            if (d) return d;
+        if (bySlug) return bySlug;
 
-            // 2. Fallback: direct Mongo _id lookup (backward compat for old bookmarks)
-            if (isMongoId(slugOrId)) {
-                d = await Dream.findOne({
-                    _id: slugOrId,
-                    visibilityStatus: 'public',
-                    'publicVersion.content': { $exists: true }
-                }).lean();
-                if (d) return d;
-            }
+        // 2. UUID fallback (backward compat for old bookmarks)
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidPattern.test(slugOrId)) {
+            const { data: byId } = await supabaseAdmin
+                .from('dreams')
+                .select('*')
+                .eq('id', slugOrId)
+                .eq('visibility_status', 'public')
+                .not('public_version', 'is', null)
+                .single();
 
-            return null;
-        }, 2, 5000);
+            if (byId) return byId;
+        }
 
-        return dream;
+        return null;
     } catch (e: any) {
-        console.error('[DB ERROR] MongoDB unavailable in getDream:', e?.message);
-        // Do not render broken fallback object; trigger standard 404/NotFound UI
+        console.error('[Supabase] getDream error:', e?.message);
         return null;
     }
 }
 
 /**
- * Fetch related dreams — smart matching by primarySymbol → secondarySymbols → tags → recency.
+ * Fetch related dreams: primarySymbol → secondarySymbols/tags → recency.
  */
 async function getRelatedDreams(
     currentId: string,
@@ -61,87 +61,67 @@ async function getRelatedDreams(
     tags: string[] = [],
     limit = 4
 ) {
+    const selectFields = 'public_version, seo_slug, tags, id';
+    const baseFilter = (q: any) =>
+        q
+            .neq('id', currentId)
+            .eq('visibility_status', 'public')
+            .not('public_version', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+    const mapDream = (d: any) => ({
+        title: d.public_version?.title || d.public_version?.comprehensiveInterpretation?.metaTitle || 'حلم مفسر',
+        slug: d.seo_slug || d.id,
+        content: (d.public_version?.content || '').slice(0, 120),
+        primarySymbol: d.public_version?.comprehensiveInterpretation?.primarySymbol || null,
+    });
+
     try {
-        const related = await withDbRetry(async () => {
-            const baseQuery = {
-                _id: { $ne: currentId },
-                visibilityStatus: 'public',
-                'publicVersion.content': { $exists: true },
-            };
-
-            const selectFields = 'publicVersion.title publicVersion.content seoSlug tags publicVersion.comprehensiveInterpretation.primarySymbol';
-
-            // Priority 1: Match by primarySymbol
-            if (primarySymbol) {
-                const bySymbol = await Dream.find({
-                    ...baseQuery,
-                    'publicVersion.comprehensiveInterpretation.primarySymbol': primarySymbol
-                })
-                    .sort({ 'publicVersion.publishedAt': -1 })
-                    .limit(limit)
+        // Priority 1: match by primarySymbol (stored inside public_version JSONB)
+        if (primarySymbol) {
+            const { data: bySymbol } = await baseFilter(
+                supabaseAdmin
+                    .from('dreams')
                     .select(selectFields)
-                    .lean();
+                    .eq('public_version->comprehensiveInterpretation->>primarySymbol', primarySymbol)
+            );
+            if (bySymbol && bySymbol.length >= 2) return bySymbol.map(mapDream);
+        }
 
-                if (bySymbol.length >= 2) {
-                    return bySymbol.map((d: any) => ({
-                        title: d.publicVersion?.title || 'حلم مفسر',
-                        slug: d.seoSlug || d._id.toString(),
-                        content: d.publicVersion?.content?.slice(0, 120) || '',
-                        primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
-                    }));
-                }
-            }
-
-            // Priority 2: Match by secondarySymbols or tags
-            const symbolsAndTags = [...secondarySymbols, ...tags].filter(Boolean);
-            if (symbolsAndTags.length > 0) {
-                const byTags = await Dream.find({
-                    ...baseQuery,
-                    tags: { $in: symbolsAndTags }
-                })
-                    .sort({ 'publicVersion.publishedAt': -1 })
-                    .limit(limit)
+        // Priority 2: match by tags overlap
+        const symbolsAndTags = [...secondarySymbols, ...tags].filter(Boolean);
+        if (symbolsAndTags.length > 0) {
+            const { data: byTags } = await baseFilter(
+                supabaseAdmin
+                    .from('dreams')
                     .select(selectFields)
-                    .lean();
+                    .overlaps('tags', symbolsAndTags)
+            );
+            if (byTags && byTags.length >= 2) return byTags.map(mapDream);
+        }
 
-                if (byTags.length >= 2) {
-                    return byTags.map((d: any) => ({
-                        title: d.publicVersion?.title || 'حلم مفسر',
-                        slug: d.seoSlug || d._id.toString(),
-                        content: d.publicVersion?.content?.slice(0, 120) || '',
-                        primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
-                    }));
-                }
-            }
-
-            // Fallback: most recent public dreams
-            const recent = await Dream.find(baseQuery)
-                .sort({ 'publicVersion.publishedAt': -1 })
-                .limit(limit)
-                .select(selectFields)
-                .lean();
-
-            return recent.map((d: any) => ({
-                title: d.publicVersion?.title || 'حلم مفسر',
-                slug: d.seoSlug || d._id.toString(),
-                content: d.publicVersion?.content?.slice(0, 120) || '',
-                primarySymbol: d.publicVersion?.comprehensiveInterpretation?.primarySymbol || null,
-            }));
-        }, 2, 5000);
-
-        return related;
+        // Fallback: most recent public dreams
+        const { data: recent } = await baseFilter(
+            supabaseAdmin.from('dreams').select(selectFields)
+        );
+        return (recent ?? []).map(mapDream);
     } catch (e: any) {
-        console.error('[DB ERROR] MongoDB unavailable in getRelatedDreams:', e?.message);
+        console.error('[Supabase] getRelatedDreams error:', e?.message);
         return fallbackDreams.slice(0, limit).map(d => ({
             title: d.title,
             slug: d.slug,
             content: d.content,
-            primarySymbol: 'رمز عام'
+            primarySymbol: 'رمز عام',
         }));
     }
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ dreamSlug: string }> }): Promise<Metadata> {
+export async function generateMetadata({
+    params,
+}: {
+    params: Promise<{ dreamSlug: string }>;
+}): Promise<Metadata> {
     const { dreamSlug } = await params;
     const dream = await getDream(decodeURIComponent(dreamSlug));
 
@@ -153,32 +133,32 @@ export async function generateMetadata({ params }: { params: Promise<{ dreamSlug
         };
     }
 
-    const comprehensive = (dream as any).publicVersion?.comprehensiveInterpretation;
-    const seoTitle = comprehensive?.metaTitle
-        || generateSeoTitle(dream.publicVersion?.title, dream.tags, dream.publicVersion?.content || '');
-    const metaDescription = comprehensive?.metaDescription
-        || generateMetaDescription(dream.publicVersion?.interpretation || '', dream.tags);
+    const pv = dream.public_version || {};
+    const comprehensive = pv.comprehensiveInterpretation || pv.comprehensive_interpretation || {};
+    const tags = dream.tags || [];
 
-    const slug = dream.seoSlug || dream._id.toString();
+    const seoTitle =
+        comprehensive.metaTitle ||
+        comprehensive.meta_title ||
+        generateSeoTitle(pv.title, tags, pv.content || '');
+    const metaDescription =
+        comprehensive.metaDescription ||
+        comprehensive.meta_description ||
+        generateMetaDescription(pv.interpretation || '', tags);
+
+    const slug = dream.seo_slug || dream.id;
     const canonicalUrl = `${BASE_URL}/${slug}`;
 
     return {
         title: `${seoTitle} - المفسّر`,
         description: metaDescription,
-        keywords: dream.tags?.join(', '),
+        keywords: tags.join(', '),
         robots: {
             index: true,
             follow: true,
-            googleBot: {
-                index: true,
-                follow: true,
-                'max-snippet': -1,
-                'max-image-preview': 'large',
-            },
+            googleBot: { index: true, follow: true, 'max-snippet': -1, 'max-image-preview': 'large' },
         },
-        alternates: {
-            canonical: canonicalUrl,
-        },
+        alternates: { canonical: canonicalUrl },
         openGraph: {
             title: seoTitle,
             description: metaDescription,
@@ -186,43 +166,47 @@ export async function generateMetadata({ params }: { params: Promise<{ dreamSlug
             siteName: 'المفسّر',
             locale: 'ar_SA',
             type: 'article',
-            publishedTime: (dream as any).publicVersion?.publishedAt
-                ? new Date((dream as any).publicVersion.publishedAt).toISOString()
+            publishedTime: pv.publishedAt || pv.published_at
+                ? new Date(pv.publishedAt || pv.published_at).toISOString()
                 : undefined,
-            modifiedTime: (dream as any).updatedAt
-                ? new Date((dream as any).updatedAt).toISOString()
+            modifiedTime: dream.updated_at
+                ? new Date(dream.updated_at).toISOString()
                 : undefined,
-            tags: dream.tags,
+            tags,
         },
-        twitter: {
-            card: 'summary_large_image',
-            title: seoTitle,
-            description: metaDescription,
-        },
+        twitter: { card: 'summary_large_image', title: seoTitle, description: metaDescription },
     };
 }
 
-export default async function DreamDetailsPage({ params }: { params: Promise<{ dreamSlug: string }> }) {
+export default async function DreamDetailsPage({
+    params,
+}: {
+    params: Promise<{ dreamSlug: string }>;
+}) {
     const { dreamSlug } = await params;
     const decodedSlug = decodeURIComponent(dreamSlug);
-
     const dream = await getDream(decodedSlug);
 
-    if (!dream) {
-        notFound();
-    }
+    if (!dream) notFound();
 
-    const slug = dream.seoSlug || dream._id.toString();
+    const pv = dream.public_version || {};
+    const comprehensive = pv.comprehensiveInterpretation || pv.comprehensive_interpretation || {};
+    const tags = dream.tags || [];
+
+    const slug = dream.seo_slug || dream.id;
     const canonicalUrl = `${BASE_URL}/${slug}`;
 
-    const comprehensive = (dream as any).publicVersion?.comprehensiveInterpretation;
-    const seoTitle = comprehensive?.metaTitle
-        || generateSeoTitle(dream.publicVersion?.title, dream.tags, dream.publicVersion?.content || '');
-    const metaDescription = comprehensive?.metaDescription
-        || generateMetaDescription(dream.publicVersion?.interpretation || '', dream.tags);
+    const seoTitle =
+        comprehensive.metaTitle ||
+        comprehensive.meta_title ||
+        generateSeoTitle(pv.title, tags, pv.content || '');
+    const metaDescription =
+        comprehensive.metaDescription ||
+        comprehensive.meta_description ||
+        generateMetaDescription(pv.interpretation || '', tags);
 
-    const publishedAt = (dream as any).publicVersion?.publishedAt || (dream as any).createdAt;
-    const updatedAt = (dream as any).updatedAt || publishedAt;
+    const publishedAt = pv.publishedAt || pv.published_at || dream.created_at;
+    const updatedAt = dream.updated_at || publishedAt;
 
     // JSON-LD: Article
     const jsonLd = generateArticleSchema({
@@ -231,7 +215,7 @@ export default async function DreamDetailsPage({ params }: { params: Promise<{ d
         url: canonicalUrl,
         datePublished: publishedAt ? new Date(publishedAt).toISOString() : new Date().toISOString(),
         dateModified: updatedAt ? new Date(updatedAt).toISOString() : undefined,
-        tags: dream.tags,
+        tags,
     });
 
     // JSON-LD: Breadcrumbs
@@ -242,63 +226,39 @@ export default async function DreamDetailsPage({ params }: { params: Promise<{ d
     ]);
 
     // JSON-LD: FAQ
-    const faqs = (dream as any).publicVersion?.faqs
-        ?? comprehensive?.faqs
-        ?? [];
-    const faqJsonLd = faqs && faqs.length > 0
-        ? generateFAQSchema(faqs.map((f: any) => ({ question: f.question, answer: f.answer })))
-        : null;
+    const faqs = pv.faqs ?? comprehensive.faqs ?? [];
+    const faqJsonLd =
+        faqs && faqs.length > 0
+            ? generateFAQSchema(faqs.map((f: any) => ({ question: f.question, answer: f.answer })))
+            : null;
 
-    // Fetch related dreams using smart symbol matching
-    const primarySymbol = comprehensive?.primarySymbol ?? null;
-    const secondarySymbols = comprehensive?.secondarySymbols ?? [];
-    const related = await getRelatedDreams(
-        dream._id.toString(),
-        primarySymbol,
-        secondarySymbols,
-        dream.tags,
-    );
+    // Related dreams
+    const primarySymbol = comprehensive.primarySymbol || comprehensive.primary_symbol || null;
+    const secondarySymbols = comprehensive.secondarySymbols || comprehensive.secondary_symbols || [];
+    const related = await getRelatedDreams(dream.id, primarySymbol, secondarySymbols, tags);
 
-    // JSON-LD: ItemList (Related Dreams)
-    const relatedListJsonLd = related && related.length > 0 
-        ? generateDreamListSchema(
-            related.map(r => ({
-                title: r.title,
-                url: `${BASE_URL}/${r.slug}`,
-                description: r.content || ''
-            })),
-            canonicalUrl
-        )
-        : null;
-
-    // Serialize (plain objects only — no Mongoose documents)
-    const serializedDream = JSON.parse(JSON.stringify(dream));
+    // JSON-LD: Related dream list
+    const relatedListJsonLd =
+        related && related.length > 0
+            ? generateDreamListSchema(
+                  related.map(r => ({ title: r.title, url: `${BASE_URL}/${r.slug}`, description: r.content || '' })),
+                  canonicalUrl
+              )
+            : null;
 
     return (
         <>
-            <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-            />
-            <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
-            />
+            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
             {faqJsonLd && (
-                <script
-                    type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-                />
+                <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
             )}
             {relatedListJsonLd && (
-                <script
-                    type="application/ld+json"
-                    dangerouslySetInnerHTML={{ __html: JSON.stringify(relatedListJsonLd) }}
-                />
+                <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(relatedListJsonLd) }} />
             )}
             <Header />
             <main className="min-h-screen pt-24 pb-16">
-                <DreamArticle dream={serializedDream} related={related} />
+                <DreamArticle dream={dream} related={related} />
                 <div className="container mt-12">
                     <EngagementWidget slug={slug} />
                 </div>

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-import Interpreter from '@/models/Interpreter';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken, initFirebaseAdmin } from '@/lib/firebase-admin';
 
 initFirebaseAdmin();
@@ -12,9 +10,7 @@ export async function POST(
 ) {
     try {
         const { id } = await params;
-        await dbConnect();
 
-        // 1. Auth Headers
         const authHeader = request.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -26,46 +22,59 @@ export async function POST(
         try {
             const decodedToken = await verifyIdToken(token);
             userId = decodedToken.uid;
-        } catch (authError) {
+        } catch {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // 2. Validate Interpreter
-        const interpreter = await Interpreter.findOne({ userId });
+        // Validate interpreter
+        const { data: interpreter } = await supabaseAdmin
+            .from('interpreters')
+            .select('id, user_id, status')
+            .eq('user_id', userId)
+            .maybeSingle();
+
         if (!interpreter) {
             return NextResponse.json({ error: 'Not an interpreter' }, { status: 403 });
         }
 
-        // 3. Find & Validate Request
-        const dreamRequest = await DreamRequest.findById(id);
+        // Find dream request
+        const { data: dreamRequest } = await supabaseAdmin
+            .from('dream_requests')
+            .select('id, status, interpreter_user_id')
+            .eq('id', id)
+            .maybeSingle();
+
         if (!dreamRequest) {
             return NextResponse.json({ error: 'Request not found' }, { status: 404 });
         }
 
-        if (dreamRequest.interpreterUserId !== userId) {
+        if (dreamRequest.interpreter_user_id !== userId) {
             return NextResponse.json({ error: 'Not authorized for this request' }, { status: 403 });
         }
 
-        // 4. Strict Transition: Only allowed from 'new'
-        if (dreamRequest.status !== 'new') {
-            // If already in progress, just return success (idempotent-ish) or error
-            if (dreamRequest.status === 'in_progress') {
-                return NextResponse.json({ message: 'Already in progress', status: 'in_progress' });
-            }
-            return NextResponse.json({ error: `Cannot start request in status: ${dreamRequest.status}` }, { status: 400 });
+        // Strict transition: only from 'new'
+        if (dreamRequest.status === 'in_progress') {
+            return NextResponse.json({ message: 'Already in progress', status: 'in_progress' });
         }
 
-        // 5. Update Status
-        dreamRequest.status = 'in_progress';
-        dreamRequest.acceptedAt = new Date();
-        await dreamRequest.save();
+        if (dreamRequest.status !== 'new') {
+            return NextResponse.json({
+                error: `Cannot start request in status: ${dreamRequest.status}`
+            }, { status: 400 });
+        }
 
-        // TODO: Notification to user "In Progress"
+        await supabaseAdmin
+            .from('dream_requests')
+            .update({
+                status: 'in_progress',
+                accepted_at: new Date().toISOString(),
+            })
+            .eq('id', id);
 
         return NextResponse.json({
             success: true,
             status: 'in_progress',
-            message: 'Interpretation started'
+            message: 'Interpretation started',
         });
 
     } catch (error) {

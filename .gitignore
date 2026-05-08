@@ -42,3 +42,8 @@ next-env.d.ts
 
 # Security
 *firebase-adminsdk*.json
+
+# Local env files
+.env.local
+.env*.local
+scripts/migration.log

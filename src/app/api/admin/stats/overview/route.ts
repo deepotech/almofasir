@@ -1,118 +1,75 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/adminAuth';
-import DreamRequest from '@/models/DreamRequest';
-import Interpreter from '@/models/Interpreter';
-import PlatformSettings, { getSettings } from '@/models/PlatformSettings';
-import dbConnect from '@/lib/mongodb';
+import { supabaseAdmin } from '@/lib/supabase';
 import { STUCK_ORDER_THRESHOLD_HOURS } from '@/lib/constants';
 
-// Force dynamic route
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-    // 1. Protection
     const auth = await verifyAdmin(req);
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
-
-        // 2. Date ranges
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
         const weekStart = new Date();
         weekStart.setDate(weekStart.getDate() - 7);
 
-        // 3. Parallel Queries for Performance
+        const urgentThresholdDate = new Date(Date.now() - STUCK_ORDER_THRESHOLD_HOURS * 60 * 60 * 1000).toISOString();
+        const warningThresholdDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const activeInterpreterThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
         const [
-            dreamsToday,
-            paidOrdersToday,
-            paidOrdersWeek,
-            revenueAgg,
-            activeInterpreters,
-            pendingOrders,
-            aiFailures,
-            settings
+            dreamsTodayResp,
+            paidOrdersTodayResp,
+            paidOrdersWeekResp,
+            activeInterpretersResp,
+            pendingOrdersResp,
+            aiFailuresResp,
+            revenueResp,
+            settingsResp
         ] = await Promise.all([
-            // Total Dreams Today (AI + HUMAN) - Created today, not cancelled
-            DreamRequest.countDocuments({
-                createdAt: { $gte: todayStart },
-                status: { $ne: 'cancelled' }
-            }),
-
-            // Paid Orders Today - Strictly 'paid' status
-            DreamRequest.countDocuments({
-                createdAt: { $gte: todayStart },
-                paymentStatus: 'paid'
-            }),
-
-            // Paid Orders Week
-            DreamRequest.countDocuments({
-                createdAt: { $gte: weekStart },
-                paymentStatus: 'paid'
-            }),
-
-            // Real Revenue & Commission (ALL Paid Orders, regardless of completion status)
-            DreamRequest.aggregate([
-                { $match: { paymentStatus: 'paid' } },
-                {
-                    $group: {
-                        _id: null,
-                        totalRevenue: { $sum: '$lockedPrice' },
-                        platformCommission: { $sum: '$platformCommission' },
-                        // Interpreter earnings = Total - Commission (roughly, or sum explicit field if populated)
-                        // If interpreterEarning is only populated on completion, we might rely on math here for pending:
-                        // But strictly: lockedPrice - platformCommission is the "net" money in system that isn't platform fee.
-                        interpreterEarning: { $sum: { $subtract: ['$lockedPrice', '$platformCommission'] } }
-                    }
-                }
-            ]),
-
-            // Active Interpreters (Strict: status active AND activity in last 24h)
-            Interpreter.countDocuments({
-                status: 'active',
-                updatedAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-            }),
-
-            // Pending/Stuck Orders (new > Threshold) OR (in_progress > Threshold)
-            // STRICT: Needs action if it's new/assigned for too long
-            DreamRequest.countDocuments({
-                $or: [
-                    {
-                        status: 'new',
-                        createdAt: { $lt: new Date(Date.now() - STUCK_ORDER_THRESHOLD_HOURS * 60 * 60 * 1000) }
-                    },
-                    {
-                        status: 'assigned',
-                        updatedAt: { $lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Assigned > 24h ago
-                    }
-                ]
-            }),
-
-            // AI Failures
-            DreamRequest.countDocuments({
-                type: 'AI',
-                status: 'cancelled',
-                createdAt: { $gte: weekStart }
-            }),
-
-            getSettings()
+            supabaseAdmin.from('dream_requests').select('*', { count: 'exact', head: true })
+                .gte('created_at', todayStart.toISOString())
+                .neq('status', 'cancelled'),
+            supabaseAdmin.from('dream_requests').select('*', { count: 'exact', head: true })
+                .gte('created_at', todayStart.toISOString())
+                .eq('payment_status', 'paid'),
+            supabaseAdmin.from('dream_requests').select('*', { count: 'exact', head: true })
+                .gte('created_at', weekStart.toISOString())
+                .eq('payment_status', 'paid'),
+            supabaseAdmin.from('interpreters').select('*', { count: 'exact', head: true })
+                .eq('status', 'active')
+                .gte('updated_at', activeInterpreterThreshold),
+            supabaseAdmin.from('dream_requests').select('*', { count: 'exact', head: true })
+                .or(`and(status.eq.new,created_at.lt.${urgentThresholdDate}),and(status.eq.assigned,updated_at.lt.${warningThresholdDate})`),
+            supabaseAdmin.from('dream_requests').select('*', { count: 'exact', head: true })
+                .eq('type', 'AI')
+                .eq('status', 'cancelled')
+                .gte('created_at', weekStart.toISOString()),
+            supabaseAdmin.from('dream_requests').select('locked_price, platform_commission').eq('payment_status', 'paid'),
+            supabaseAdmin.from('platform_settings').select('*').single()
         ]);
 
-        const revenueData = revenueAgg[0] || { totalRevenue: 0, platformCommission: 0 };
+        let totalRevenue = 0;
+        let platformCommissionTotal = 0;
+        
+        (revenueResp.data || []).forEach(r => {
+            totalRevenue += (r.locked_price || 0);
+            platformCommissionTotal += (r.platform_commission || 0);
+        });
 
         return NextResponse.json({
-            dreamsToday,
-            paidOrdersToday,
-            paidOrdersWeek,
-            totalRevenue: revenueData.totalRevenue,
-            platformCommission: revenueData.platformCommission,
-            activeInterpreters,
-            pendingOrders,
-            aiFailures,
-            commissionRate: settings.commissionRate
+            dreamsToday: dreamsTodayResp.count || 0,
+            paidOrdersToday: paidOrdersTodayResp.count || 0,
+            paidOrdersWeek: paidOrdersWeekResp.count || 0,
+            totalRevenue: totalRevenue,
+            platformCommission: platformCommissionTotal,
+            activeInterpreters: activeInterpretersResp.count || 0,
+            pendingOrders: pendingOrdersResp.count || 0,
+            aiFailures: aiFailuresResp.count || 0,
+            commissionRate: settingsResp.data?.commission_rate || 0.3
         });
 
     } catch (error) {

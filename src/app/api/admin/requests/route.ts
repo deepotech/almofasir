@@ -1,20 +1,38 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import InterpreterRequest from '@/models/InterpreterRequest';
+import { verifyAdmin } from '@/lib/adminAuth';
+import { supabaseAdmin } from '@/lib/supabase';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: Request) {
+    const auth = await verifyAdmin(req);
+    if (!auth.authorized) return auth.response;
+
     try {
-        await dbConnect();
+        const { data: requests, error } = await supabaseAdmin
+            .from('interpreter_requests')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-        // Fetch all requests, sorted by newest first
-        const requests = await InterpreterRequest.find({}).sort({ createdAt: -1 });
+        if (error) throw error;
 
-        return NextResponse.json({ requests });
+        const mapped = (requests || []).map(r => ({
+            _id: r.id,
+            fullName: r.full_name,
+            email: r.email,
+            phone: r.phone,
+            country: r.country,
+            experienceYears: r.experience_years,
+            interpretationType: r.interpretation_type,
+            bio: r.bio,
+            sampleInterpretation: r.sample_interpretation,
+            status: r.status,
+            createdAt: r.created_at
+        }));
+
+        return NextResponse.json({ requests: mapped });
     } catch (error) {
         console.error('Error fetching requests:', error);
-        return NextResponse.json(
-            { message: 'Error fetching requests' },
-            { status: 500 }
-        );
+        return NextResponse.json({ message: 'Error fetching requests' }, { status: 500 });
     }
 }

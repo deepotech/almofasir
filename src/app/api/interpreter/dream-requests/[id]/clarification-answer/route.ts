@@ -1,30 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-import Interpreter from '@/models/Interpreter';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken, initFirebaseAdmin } from '@/lib/firebase-admin';
 import { validateStatusTransition } from '@/lib/permissions';
 
 initFirebaseAdmin();
 
-/**
- * POST /api/interpreter/dream-requests/[id]/clarification-answer - Answer clarification
- * 
- * Transition: clarification_requested → closed
- * 
- * Interpreter Rules:
- * - Can only answer clarification for assigned requests
- * - Request must be in 'clarification_requested' status
- * - Only ONE answer allowed
- */
 export async function POST(
     request: Request,
     context: { params: Promise<{ id: string }> }
 ) {
     try {
         const { id } = await context.params;
-
-        await dbConnect();
 
         const authHeader = request.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
@@ -37,8 +23,7 @@ export async function POST(
         try {
             const decodedToken = await verifyIdToken(token);
             userId = decodedToken.uid;
-        } catch (authError) {
-            console.error('Auth failed:', authError);
+        } catch {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -52,8 +37,13 @@ export async function POST(
             );
         }
 
-        // Verify user is an interpreter
-        const interpreter = await Interpreter.findOne({ userId });
+        // Verify interpreter
+        const { data: interpreter } = await supabaseAdmin
+            .from('interpreters')
+            .select('id, status')
+            .eq('user_id', userId)
+            .maybeSingle();
+
         if (!interpreter) {
             return NextResponse.json({ error: 'ليس لديك صلاحية المفسر' }, { status: 403 });
         }
@@ -63,74 +53,59 @@ export async function POST(
         }
 
         // Get dream request
-        const dreamRequest = await DreamRequest.findById(id);
+        const { data: dreamRequest } = await supabaseAdmin
+            .from('dream_requests')
+            .select('id, status, interpreter_user_id, clarification_question, clarification_answer')
+            .eq('id', id)
+            .maybeSingle();
+
         if (!dreamRequest) {
             return NextResponse.json({ error: 'الطلب غير موجود' }, { status: 404 });
         }
 
-        // Verify this request is assigned to this interpreter
-        if (dreamRequest.interpreterUserId !== userId) {
+        if (dreamRequest.interpreter_user_id !== userId) {
             return NextResponse.json({ error: 'هذا الطلب غير مخصص لك' }, { status: 403 });
         }
 
-        // Check clarification exists
-        if (!dreamRequest.clarificationQuestion) {
-            return NextResponse.json(
-                { error: 'لا يوجد سؤال استيضاح للإجابة عليه' },
-                { status: 400 }
-            );
+        if (!dreamRequest.clarification_question) {
+            return NextResponse.json({ error: 'لا يوجد سؤال استيضاح للإجابة عليه' }, { status: 400 });
         }
 
-        // Check not already answered
-        if (dreamRequest.clarificationAnswer) {
-            return NextResponse.json(
-                { error: 'تم الإجابة على السؤال مسبقاً' },
-                { status: 400 }
-            );
+        if (dreamRequest.clarification_answer) {
+            return NextResponse.json({ error: 'تم الإجابة على السؤال مسبقاً' }, { status: 400 });
         }
 
-        // Validate status transition
-        const transitionCheck = validateStatusTransition(
-            dreamRequest.status,
-            'closed',
-            'interpreter'
-        );
-
+        const transitionCheck = validateStatusTransition(dreamRequest.status, 'closed', 'interpreter');
         if (!transitionCheck.valid) {
-            return NextResponse.json(
-                { error: transitionCheck.error },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: transitionCheck.error }, { status: 400 });
         }
 
-        // Update request
-        const updatedRequest = await DreamRequest.findByIdAndUpdate(
-            id,
-            {
-                clarificationAnswer: answer.trim(),
-                clarificationAnsweredAt: new Date(),
+        const { data: updatedRequest, error } = await supabaseAdmin
+            .from('dream_requests')
+            .update({
+                clarification_answer: answer.trim(),
+                clarification_answered_at: new Date().toISOString(),
                 status: 'closed',
-                closedAt: new Date()
-            },
-            { new: true }
-        );
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
 
         return NextResponse.json({
             success: true,
             request: {
-                id: updatedRequest!._id,
-                status: updatedRequest!.status,
-                clarificationAnswer: updatedRequest!.clarificationAnswer,
-                closedAt: updatedRequest!.closedAt
+                id: updatedRequest.id,
+                status: updatedRequest.status,
+                clarificationAnswer: updatedRequest.clarification_answer,
+                closedAt: updatedRequest.updated_at,
             },
-            message: 'تم إرسال الإجابة بنجاح'
+            message: 'تم إرسال الإجابة بنجاح',
         });
 
     } catch (error) {
         console.error('Error answering clarification:', error);
-        return NextResponse.json(
-            { error: 'حدث خطأ في إرسال الإجابة' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'حدث خطأ في إرسال الإجابة' }, { status: 500 });
     }
 }

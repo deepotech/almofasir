@@ -1,17 +1,19 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import User from '@/models/User';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(req: Request) {
     try {
-        await dbConnect();
         const { email } = await req.json();
 
         if (!email) {
             return NextResponse.json({ message: 'Email required' }, { status: 400 });
         }
 
-        const user = await User.findOne({ email });
+        const { data: user } = await supabaseAdmin
+            .from('users')
+            .select('role, plan, display_name')
+            .eq('email', email)
+            .single();
 
         if (!user) {
             return NextResponse.json({ message: 'User not found' }, { status: 404 });
@@ -20,7 +22,7 @@ export async function POST(req: Request) {
         return NextResponse.json({
             role: user.role,
             plan: user.plan,
-            displayName: user.displayName
+            displayName: user.display_name
         });
 
     } catch (error) {

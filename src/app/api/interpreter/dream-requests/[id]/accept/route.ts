@@ -1,106 +1,52 @@
-import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import DreamRequest from '@/models/DreamRequest';
-import Interpreter from '@/models/Interpreter';
+import { NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken, initFirebaseAdmin } from '@/lib/firebase-admin';
 import { validateStatusTransition } from '@/lib/permissions';
 
 initFirebaseAdmin();
 
-/**
- * POST /api/interpreter/dream-requests/[id]/accept - Accept a request
- * 
- * Transition: new → in_progress
- * 
- * Interpreter Rules:
- * - Can only accept requests assigned to them
- * - Request must be in 'new' status
- */
 export async function POST(
     request: Request,
-    context: { params: Promise<{ id: string }> }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const { id } = await context.params;
-
-        await dbConnect();
+        const { id } = await params;
 
         const authHeader = request.headers.get('Authorization');
-        if (!authHeader?.startsWith('Bearer ')) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        if (!authHeader?.startsWith('Bearer ')) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const token = authHeader.split('Bearer ')[1];
         let userId: string;
+        try { userId = (await verifyIdToken(token)).uid; } 
+        catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
 
-        try {
-            const decodedToken = await verifyIdToken(token);
-            userId = decodedToken.uid;
-        } catch (authError) {
-            console.error('Auth failed:', authError);
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const { data: interpreter } = await supabaseAdmin.from('interpreters').select('status').eq('user_id', userId).single();
+        if (!interpreter || interpreter.status === 'suspended') return NextResponse.json({ error: 'ليس لديك صلاحية المفسر' }, { status: 403 });
 
-        // Verify user is an interpreter
-        const interpreter = await Interpreter.findOne({ userId });
-        if (!interpreter) {
-            return NextResponse.json({ error: 'ليس لديك صلاحية المفسر' }, { status: 403 });
-        }
+        const { data: dreamRequest } = await supabaseAdmin.from('dream_requests').select('status, interpreter_user_id').eq('id', id).single();
+        if (!dreamRequest) return NextResponse.json({ error: 'الطلب غير موجود' }, { status: 404 });
+        if (dreamRequest.interpreter_user_id !== userId) return NextResponse.json({ error: 'هذا الطلب غير مخصص لك' }, { status: 403 });
 
-        if (interpreter.status === 'suspended') {
-            return NextResponse.json({ error: 'حسابك معلق' }, { status: 403 });
-        }
+        const transitionCheck = validateStatusTransition(dreamRequest.status, 'in_progress', 'interpreter');
+        if (!transitionCheck.valid) return NextResponse.json({ error: transitionCheck.error }, { status: 400 });
 
-        // Get dream request
-        const dreamRequest = await DreamRequest.findById(id);
-        if (!dreamRequest) {
-            return NextResponse.json({ error: 'الطلب غير موجود' }, { status: 404 });
-        }
+        const { data: updatedRequest, error } = await supabaseAdmin
+            .from('dream_requests')
+            .update({ status: 'in_progress', accepted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq('id', id)
+            .select()
+            .single();
 
-        // Verify this request is assigned to this interpreter
-        if (dreamRequest.interpreterUserId !== userId) {
-            return NextResponse.json({ error: 'هذا الطلب غير مخصص لك' }, { status: 403 });
-        }
-
-        // Validate status transition
-        const transitionCheck = validateStatusTransition(
-            dreamRequest.status,
-            'in_progress',
-            'interpreter'
-        );
-
-        if (!transitionCheck.valid) {
-            return NextResponse.json(
-                { error: transitionCheck.error },
-                { status: 400 }
-            );
-        }
-
-        // Update request
-        const updatedRequest = await DreamRequest.findByIdAndUpdate(
-            id,
-            {
-                status: 'in_progress',
-                acceptedAt: new Date()
-            },
-            { new: true }
-        );
+        if (error) throw error;
 
         return NextResponse.json({
             success: true,
-            request: {
-                id: updatedRequest!._id,
-                status: updatedRequest!.status,
-                acceptedAt: updatedRequest!.acceptedAt
-            },
+            request: { id: updatedRequest.id, status: updatedRequest.status, acceptedAt: updatedRequest.accepted_at },
             message: 'تم قبول الطلب بنجاح'
         });
 
     } catch (error) {
         console.error('Error accepting request:', error);
-        return NextResponse.json(
-            { error: 'حدث خطأ في قبول الطلب' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'حدث خطأ في قبول الطلب' }, { status: 500 });
     }
 }

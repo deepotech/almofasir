@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
-import dbConnect from '@/lib/mongodb';
-import User from '@/models/User';
+import { supabaseAdmin } from '@/lib/supabase';
 
 initFirebaseAdmin();
 
@@ -10,30 +9,30 @@ export async function GET(req: NextRequest) {
     try {
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
-            return NextResponse.json({
-                canUseFreeToday: true, // Guests allow 1 free (handled by client storage usually, but here checking auth user)
-                isGuest: true
-            });
+            return NextResponse.json({ canUseFreeToday: true, isGuest: true });
         }
 
         const token = authHeader.split('Bearer ')[1];
         let decodedToken;
         try {
             decodedToken = await getAuth().verifyIdToken(token);
-        } catch (e) {
+        } catch {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        await dbConnect();
-        const user = await User.findOne({ firebaseUid: decodedToken.uid });
+        const { data: user, error } = await supabaseAdmin
+            .from('users')
+            .select('credits, plan, last_free_dream_at')
+            .eq('firebase_uid', decodedToken.uid)
+            .single();
 
-        if (!user) {
+        if (error || !user) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
-        // STRICT: 24-hour rolling window (matching accessControl.ts)
+        // STRICT: 24-hour rolling window
         const now = new Date();
-        const lastFree = user.lastFreeDreamAt ? new Date(user.lastFreeDreamAt) : null;
+        const lastFree = user.last_free_dream_at ? new Date(user.last_free_dream_at) : null;
 
         let canUseFreeToday = true;
         let hoursUntilReset = 0;
@@ -46,11 +45,8 @@ export async function GET(req: NextRequest) {
 
             if (hoursDiff < 24) {
                 canUseFreeToday = false;
-
-                // Calculate exact time until reset
                 nextResetTime = new Date(lastFree.getTime() + 24 * 60 * 60 * 1000);
                 const remainingMs = nextResetTime.getTime() - now.getTime();
-
                 hoursUntilReset = Math.floor(remainingMs / (1000 * 60 * 60));
                 minutesUntilReset = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
             }
@@ -62,12 +58,11 @@ export async function GET(req: NextRequest) {
             hoursUntilReset,
             minutesUntilReset,
             nextResetTime: nextResetTime?.toISOString() || null,
-            lastFreeDreamAt: user.lastFreeDreamAt,
-            plan: user.plan
+            lastFreeDreamAt: user.last_free_dream_at,
+            plan: user.plan,
         });
-
     } catch (error) {
-        console.error('Usage check error:', error);
+        console.error('[user/usage] Error:', error);
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
 }

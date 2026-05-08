@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import User from '@/models/User';
-import DreamRequest from '@/models/DreamRequest';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
 
@@ -9,97 +7,128 @@ initFirebaseAdmin();
 
 export async function POST(req: NextRequest) {
     try {
-        await dbConnect();
-
         const body = await req.json();
         const { planId, userId, orderId, type } = body;
 
         // ============================================================
         // HUMAN DREAM PAYMENT FLOW
-        // Updates order status to enable interpreter visibility
         // ============================================================
         if (type === 'human-dream' && orderId) {
             console.log('PAYMENT SUCCESS FOR:', orderId, Date.now());
-            const order = await DreamRequest.findById(orderId);
+
+            const { data: order } = await supabaseAdmin
+                .from('dream_requests')
+                .select('id')
+                .eq('id', orderId)
+                .maybeSingle();
 
             if (!order) {
                 return NextResponse.json({ error: 'Order not found' }, { status: 404 });
             }
 
-            // Update payment status to 'paid' so interpreter can see it
-            await DreamRequest.findByIdAndUpdate(orderId, {
-                paymentStatus: 'paid',
-                status: 'assigned', // Ready for interpreter to work on
-                paymentId: `mock_${Date.now()}` // Mock payment ID
-            });
+            await supabaseAdmin
+                .from('dream_requests')
+                .update({
+                    payment_status: 'paid',
+                    status: 'assigned',
+                    payment_id: `mock_${Date.now()}`,
+                })
+                .eq('id', orderId);
 
             console.log(`[Payment] Human dream order ${orderId} marked as PAID`);
 
             return NextResponse.json({
                 success: true,
                 orderId,
-                message: 'Payment successful, order visible to interpreter'
+                message: 'Payment successful, order visible to interpreter',
             });
         }
 
         // ============================================================
-        // ORIGINAL PLAN-BASED PAYMENT FLOW
+        // PLAN-BASED PAYMENT FLOW
         // ============================================================
-        // ============================================================
-        // ORIGINAL PLAN-BASED PAYMENT FLOW
-        // ============================================================
-
         if (!userId) {
             return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
         }
 
-        // Use atomic upsert to prevent race conditions and handle user creation robustly
-        // This avoids "E11000 duplicate key error" if two requests hit at once
-        let user = await User.findOneAndUpdate(
-            { firebaseUid: userId },
-            {
-                $setOnInsert: {
-                    email: `user_${userId.substring(0, 8)}@example.com`, // Temporary email until sync
+        // Upsert user
+        let tempEmail = `user_${userId.substring(0, 8)}@example.com`;
+        const { data: user } = await supabaseAdmin
+            .from('users')
+            .upsert(
+                {
+                    firebase_uid: userId,
+                    email: tempEmail,
                     credits: 0,
-                    plan: 'free'
-                }
-            },
-            { new: true, upsert: true, setDefaultsOnInsert: true }
-        );
+                    plan: 'free',
+                    status: 'active',
+                    subscription_status: 'inactive',
+                },
+                { onConflict: 'firebase_uid', ignoreDuplicates: true }
+            )
+            .select()
+            .maybeSingle();
 
-        // Try to sync email from Firebase if possible (best effort), but don't block
+        // Fetch current user
+        const { data: currentUser } = await supabaseAdmin
+            .from('users')
+            .select('*')
+            .eq('firebase_uid', userId)
+            .single();
+
+        if (!currentUser) {
+            return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        // Try to sync email from Firebase
         try {
-            if (user.email.startsWith('user_')) {
+            if (currentUser.email?.startsWith('user_')) {
                 const firebaseUser = await getAuth().getUser(userId);
                 if (firebaseUser.email) {
-                    user.email = firebaseUser.email;
-                    await user.save();
+                    await supabaseAdmin
+                        .from('users')
+                        .update({ email: firebaseUser.email })
+                        .eq('firebase_uid', userId);
                 }
             }
         } catch (e) {
-            // Ignore firebase errors in mock/dev mode
             console.warn('[Payment API] Could not sync email from Firebase:', e);
         }
 
         // Apply Plan Logic
+        const planUpdates: Record<string, unknown> = {};
+        let creditsToAdd = 0;
+
         switch (planId) {
             case 'ai-single':
-                user.credits += 3;
+                creditsToAdd = 3;
                 break;
             case 'ai-monthly':
-                user.plan = 'pro';
-                user.subscriptionStatus = 'active';
-                user.subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // +30 days
-                user.credits += 15;
+                planUpdates.plan = 'pro';
+                planUpdates.subscription_status = 'active';
+                planUpdates.subscription_end_date = new Date(
+                    Date.now() + 30 * 24 * 60 * 60 * 1000
+                ).toISOString();
+                creditsToAdd = 15;
                 break;
             case 'human-expert':
-                // Handled via separate request flow
                 break;
         }
 
-        await user.save();
+        if (creditsToAdd > 0) {
+            planUpdates.credits = (currentUser.credits || 0) + creditsToAdd;
+        }
 
-        return NextResponse.json({ success: true, credits: user.credits });
+        if (Object.keys(planUpdates).length > 0) {
+            await supabaseAdmin
+                .from('users')
+                .update(planUpdates)
+                .eq('firebase_uid', userId);
+        }
+
+        const newCredits = (currentUser.credits || 0) + creditsToAdd;
+
+        return NextResponse.json({ success: true, credits: newCredits });
 
     } catch (error: any) {
         console.error('Payment mock error:', error);

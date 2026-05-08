@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import User from '@/models/User';
-import Interpreter from '@/models/Interpreter';
+import { supabaseAdmin } from '@/lib/supabase';
 import { verifyIdToken } from '@/lib/firebase-admin';
-import InterpreterRequest from '@/models/InterpreterRequest';
+import { getAuth } from 'firebase-admin/auth';
+import { initFirebaseAdmin } from '@/lib/firebase-admin';
+
+initFirebaseAdmin();
 
 export async function GET(req: NextRequest) {
     try {
-        await dbConnect();
-
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -31,76 +30,98 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Upsert user to ensure they exist in DB
-        let user = await User.findOne({ firebaseUid: userId }).select('-__v');
-
+        // Determine role
         let role = 'user';
         if (email) {
-            const approvedRequest = await InterpreterRequest.findOne({
-                email: email.toLowerCase(),
-                status: 'approved'
-            });
+            const { data: approvedRequest } = await supabaseAdmin
+                .from('interpreter_requests')
+                .select('id')
+                .eq('email', email.toLowerCase())
+                .eq('status', 'approved')
+                .maybeSingle();
             if (approvedRequest) role = 'interpreter';
             if (email === 'dev23hecoplus93mor@gmail.com') role = 'admin';
         }
 
+        // Try to find existing user
+        let { data: user } = await supabaseAdmin
+            .from('users')
+            .select('*')
+            .eq('firebase_uid', userId)
+            .maybeSingle();
+
         if (!user && email) {
-            user = await User.create({
-                firebaseUid: userId,
-                email: email,
-                displayName: email.split('@')[0],
-                role: role,
-                credits: 0,
-                dreamCount: 0,
-                isPremium: false
-            });
+            // Create user
+            const { data: newUser } = await supabaseAdmin
+                .from('users')
+                .insert({
+                    firebase_uid: userId,
+                    email,
+                    display_name: email.split('@')[0],
+                    role,
+                    credits: 0,
+                    plan: 'free',
+                    status: 'active',
+                    subscription_status: 'inactive',
+                })
+                .select()
+                .single();
+            user = newUser;
         } else if (user && email) {
-            // Check if we need to upgrade existing user
-            let needsSave = false;
+            // Upgrade role if needed
+            const updates: Record<string, string> = {};
             if (role === 'interpreter' && user.role !== 'interpreter' && user.role !== 'admin') {
-                user.role = 'interpreter';
-                needsSave = true;
+                updates.role = 'interpreter';
             }
             if (role === 'admin' && user.role !== 'admin') {
-                user.role = 'admin';
-                needsSave = true;
+                updates.role = 'admin';
             }
-            // Ensure status field is set (fix for existing users created before status field was added)
-            if (!user.status) {
-                user.status = 'active';
-                needsSave = true;
+            if (!user.status) updates.status = 'active';
+
+            if (Object.keys(updates).length > 0) {
+                const { data: updated } = await supabaseAdmin
+                    .from('users')
+                    .update(updates)
+                    .eq('firebase_uid', userId)
+                    .select()
+                    .single();
+                user = updated ?? user;
             }
-            if (needsSave) await user.save();
         }
 
         if (!user) {
-            console.log('[API Profile GET] User not found even after upsert attempt');
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
-        // Fetch Interpreter Profile if applicable
+        // Fetch Interpreter profile if applicable
         let interpreterProfile = null;
-        console.log(`[API Profile GET] User Role: ${user.role}, UID: ${userId}`);
-
         if (user.role === 'interpreter' || user.role === 'admin') {
-            interpreterProfile = await Interpreter.findOne({ userId: user.firebaseUid });
-            console.log(`[API Profile GET] Interpreter Profile found: ${!!interpreterProfile}`);
+            const { data: existing } = await supabaseAdmin
+                .from('interpreters')
+                .select('*')
+                .eq('user_id', userId)
+                .maybeSingle();
 
-            if (!interpreterProfile) {
-                console.log('[API Profile GET] Creating default Interpreter profile...');
-                interpreterProfile = await Interpreter.create({
-                    userId: user.firebaseUid,
-                    email: user.email,
-                    displayName: user.displayName || user.email?.split('@')[0],
-                    bio: 'مفسر أحلام',
-                    price: 30, // Default price
-                    currency: 'USD',
-                    responseTime: 24,
-                    interpretationType: 'mixed',
-                    status: 'active',
-                    isActive: true
-                });
-                console.log('[API Profile GET] Created default profile');
+            if (!existing) {
+                const { data: created } = await supabaseAdmin
+                    .from('interpreters')
+                    .insert({
+                        user_id: userId,
+                        email: user.email,
+                        display_name: user.display_name || user.email?.split('@')[0] || 'مفسر',
+                        bio: 'مفسر أحلام',
+                        price: 30,
+                        currency: 'USD',
+                        response_time: 24,
+                        interpretation_type: 'mixed',
+                        status: 'active',
+                        is_active: true,
+                    })
+                    .select()
+                    .single();
+                interpreterProfile = created;
+            } else {
+                interpreterProfile = existing;
             }
         }
 
@@ -114,16 +135,13 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
     try {
-        await dbConnect();
-        console.log('[API Profile PUT] Started');
-
         const authHeader = req.headers.get('Authorization');
         if (!authHeader?.startsWith('Bearer ')) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         const token = authHeader.split('Bearer ')[1];
-        let userId;
+        let userId: string;
 
         try {
             const decodedToken = await getAuth().verifyIdToken(token);
@@ -135,7 +153,7 @@ export async function PUT(req: NextRequest) {
                     const decodedValue = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
                     userId = decodedValue.user_id || decodedValue.sub;
                     if (!userId) throw new Error('No user_id in token');
-                } catch (decodeError) {
+                } catch {
                     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
                 }
             } else {
@@ -145,30 +163,26 @@ export async function PUT(req: NextRequest) {
 
         const body = await req.json();
         const { displayName, bio, price, avatar } = body;
-        console.log('[API Profile PUT] Request Body:', { displayName, bio, price, avatar: avatar ? 'Base64 Data' : 'undefined', userId });
 
-        const updatedUser = await User.findOneAndUpdate(
-            { firebaseUid: userId },
-            { displayName },
-            { new: true }
-        ).select('-__v');
+        const { data: updatedUser } = await supabaseAdmin
+            .from('users')
+            .update({ display_name: displayName })
+            .eq('firebase_uid', userId)
+            .select()
+            .single();
 
-        console.log('[API Profile PUT] User updated:', updatedUser ? 'yes' : 'no');
-
-        // Update Interpreter if exists
+        // Update interpreter profile if fields provided
         if (bio !== undefined || displayName || price !== undefined || avatar !== undefined) {
-            const updateFields: any = {};
-            if (displayName) updateFields.displayName = displayName;
+            const updateFields: Record<string, unknown> = {};
+            if (displayName) updateFields.display_name = displayName;
             if (bio !== undefined) updateFields.bio = bio;
             if (price !== undefined) updateFields.price = price;
             if (avatar !== undefined) updateFields.avatar = avatar;
 
-            const updatedInterpreter = await Interpreter.findOneAndUpdate(
-                { userId: userId },
-                updateFields,
-                { new: true }
-            );
-            console.log('[API Profile PUT] Interpreter updated:', updatedInterpreter ? 'success' : 'not found');
+            await supabaseAdmin
+                .from('interpreters')
+                .update(updateFields)
+                .eq('user_id', userId);
         }
 
         return NextResponse.json({ user: updatedUser });

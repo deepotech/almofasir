@@ -1,10 +1,6 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/adminAuth';
-import DreamRequest from '@/models/DreamRequest';
-import User from '@/models/User';
-import AuditLog from '@/models/AuditLog';
-import dbConnect from '@/lib/mongodb';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(
     req: NextRequest,
@@ -14,54 +10,65 @@ export async function POST(
     if (!auth.authorized) return auth.response;
 
     try {
-        await dbConnect();
         const { id } = params;
         const { reason, restoreCredits } = await req.json();
 
-        const order = await DreamRequest.findById(id);
+        const { data: order } = await supabaseAdmin
+            .from('dream_requests')
+            .select('id, status, payment_status, user_id, locked_price')
+            .eq('id', id)
+            .maybeSingle();
+
         if (!order) {
             return NextResponse.json({ error: 'Order not found' }, { status: 404 });
         }
 
-        if (order.paymentStatus === 'refunded') {
+        if (order.payment_status === 'refunded') {
             return NextResponse.json({ error: 'Order already refunded' }, { status: 400 });
         }
 
-        // 1. Update Order Status
         const oldStatus = order.status;
-        const oldPaymentStatus = order.paymentStatus;
+        const oldPaymentStatus = order.payment_status;
 
-        order.status = 'cancelled';
-        order.paymentStatus = 'refunded';
-        order.cancelledAt = new Date();
-        await order.save();
+        await supabaseAdmin
+            .from('dream_requests')
+            .update({
+                status: 'cancelled',
+                payment_status: 'refunded',
+                cancelled_at: new Date().toISOString(),
+            })
+            .eq('id', id);
 
-        // 2. Restore Credits (if applicable)
-        if (restoreCredits) {
-            const user = await User.findOne({ firebaseUid: order.userId });
+        // Restore credits if applicable
+        if (restoreCredits && order.user_id) {
+            const { data: user } = await supabaseAdmin
+                .from('users')
+                .select('id, credits, firebase_uid')
+                .eq('firebase_uid', order.user_id)
+                .maybeSingle();
+
             if (user) {
-                // Determine credit amount to refund based on plan/type
-                // Simplified: If it was credit based, +1
-                // For now, assuming direct credit increment if requested
-                user.credits = (user.credits || 0) + 1;
-                await user.save();
+                await supabaseAdmin
+                    .from('users')
+                    .update({ credits: (user.credits || 0) + 1 })
+                    .eq('id', user.id);
             }
         }
 
-        // 3. Audit Log
-        await AuditLog.create({
-            adminUserId: auth.admin._id,
-            adminEmail: auth.admin.email,
+        // Audit log
+        await supabaseAdmin.from('audit_logs').insert({
+            admin_user_id: auth.admin.id,
+            admin_email: auth.admin.email,
             action: 'refund_order',
-            targetType: 'order',
-            targetId: order._id,
+            target_type: 'order',
+            target_id: id,
             details: {
                 reason,
                 oldStatus,
                 oldPaymentStatus,
-                creditsRestored: !!restoreCredits
+                creditsRestored: !!restoreCredits,
             },
-            ipAddress: req.headers.get('x-forwarded-for')
+            ip_address: req.headers.get('x-forwarded-for'),
         });
 
         return NextResponse.json({ success: true, message: 'Order refunded successfully' });
