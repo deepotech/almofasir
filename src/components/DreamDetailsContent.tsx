@@ -33,19 +33,25 @@ interface PublicDream {
     mood: string;
     tags: string[];
     date: string;
-    publicVersion?: {
+    // Supabase returns public_version (snake_case); legacy API may return publicVersion (camelCase)
+    public_version?: {
         engagingTitle?: string;
         title?: string;
         dreamContent?: string;
         content?: string;
         seoIntro?: string;
+        seo_intro?: string;
         interpretation?: string;
         structuredInterpretation?: any;
         comprehensiveInterpretation?: ComprehensiveInterpretation;
+        comprehensive_interpretation?: ComprehensiveInterpretation;
         publishDate?: string;
+        publishedAt?: string;
+        published_at?: string;
         keywords?: string[];
         faqs?: { question: string; answer: string }[];
     };
+    publicVersion?: PublicDream['public_version']; // legacy compat alias
     slug?: string;
 }
 
@@ -287,20 +293,24 @@ export default function DreamDetailsContent({ id }: { id: string }) {
     const userDisclaimer = DisclaimerVariants[id.charCodeAt(id.length - 1) % DisclaimerVariants.length];
 
     // ── Detect Data Structure ──
-    const comprehensive = dream.publicVersion?.comprehensiveInterpretation;
-    const structured = dream.publicVersion?.structuredInterpretation;
+    // Support both Supabase snake_case (public_version) and legacy camelCase (publicVersion)
+    const pv = dream.public_version || dream.publicVersion;
+    const comprehensive = pv?.comprehensiveInterpretation || pv?.comprehensive_interpretation;
+    const structured = pv?.structuredInterpretation;
 
     // ── Normalize Content ──
-    const dreamTitle = dream.publicVersion?.title || dream.publicVersion?.engagingTitle || dream.title;
-    const dreamNarrative = dream.publicVersion?.content || dream.publicVersion?.dreamContent || dream.content;
-    const publishDate = dream.publicVersion?.publishDate || dream.date;
-    const keywords = dream.publicVersion?.keywords || dream.tags;
+    const dreamTitle = pv?.title || pv?.engagingTitle || dream.title;
+    const dreamNarrative = pv?.content || pv?.dreamContent || dream.content;
+    // Date: try all field variants, fall back to dream.date
+    const rawDate = pv?.publishedAt || pv?.published_at || pv?.publishDate || dream.date;
+    const publishDate = rawDate && !isNaN(new Date(rawDate).getTime()) ? rawDate : null;
+    const keywords = pv?.keywords || dream.tags;
 
     // ── Resolve Snippet Summary ──
-    const snippetSummary = comprehensive?.snippetSummary || structured?.summary || null;
+    const snippetSummary = comprehensive?.snippetSummary || comprehensive?.snippet_summary || structured?.summary || null;
 
     // ── Resolve Legacy Interpretation Text ──
-    const legacyText = dream.publicVersion?.interpretation
+    const legacyText = pv?.interpretation
         || (typeof dream.interpretation === 'object' ? (dream.interpretation as any)?.summary : dream.interpretation)
         || '';
 
@@ -322,9 +332,13 @@ export default function DreamDetailsContent({ id }: { id: string }) {
                     {/* ── Header: Title (h1) ── */}
                     <header className="mb-8 text-center">
                         <div className="inline-block px-3 py-1 bg-[var(--color-bg-tertiary)] rounded-full text-xs text-[var(--color-secondary)] mb-4">
-                            <time dateTime={publishDate}>
-                                {new Date(publishDate).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
-                            </time>
+                            {publishDate ? (
+                                <time dateTime={new Date(publishDate).toISOString()}>
+                                    {new Date(publishDate).toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                </time>
+                            ) : (
+                                <span>—</span>
+                            )}
                         </div>
                         <h1 className="text-3xl md:text-5xl font-bold leading-tight mb-6 text-[var(--color-gold)]">
                             {dreamTitle}
@@ -347,9 +361,9 @@ export default function DreamDetailsContent({ id }: { id: string }) {
                     </header>
 
                     {/* ── SEO Intro ── */}
-                    {dream.publicVersion?.seoIntro && (
+                    {(pv?.seoIntro || pv?.seo_intro) && (
                         <div className="text-lg text-[var(--color-text-primary)] font-medium border-r-4 border-r-[var(--color-gold)] pr-4 italic mb-8" style={{ lineHeight: 1.9 }}>
-                            {dream.publicVersion.seoIntro}
+                            {pv?.seoIntro || pv?.seo_intro}
                         </div>
                     )}
 
@@ -405,14 +419,14 @@ export default function DreamDetailsContent({ id }: { id: string }) {
                     </div>
 
                     {/* ── FAQ Accordion ── */}
-                    {dream.publicVersion?.faqs && dream.publicVersion.faqs.length > 0 && (
+                    {pv?.faqs && pv.faqs.length > 0 && (
                         <section className="mb-12">
                             <h2 className="text-2xl font-bold mb-6 text-[var(--color-text-primary)] flex items-center gap-2">
                                 <span>❓</span>
                                 <span>أسئلة شائعة حول الحلم</span>
                             </h2>
                             <div className="space-y-4">
-                                {dream.publicVersion.faqs.map((faq, idx) => (
+                                {pv.faqs.map((faq, idx) => (
                                     <FAQAccordionItem key={idx} faq={faq} index={idx} />
                                 ))}
                             </div>

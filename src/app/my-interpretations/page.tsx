@@ -145,7 +145,11 @@ export default function MyInterpretationsPage() {
                                                 </p>
 
                                                 <div className="flex items-center gap-4 text-sm text-gray-500">
-                                                    <span>{new Date(dream.createdAt).toLocaleDateString('ar-SA')}</span>
+                                                    <span>
+                                                        {dream.createdAt && !isNaN(new Date(dream.createdAt).getTime())
+                                                            ? new Date(dream.createdAt).toLocaleDateString('ar-SA')
+                                                            : '—'}
+                                                    </span>
                                                     {dream.status === 'completed' && dream.rating && (
                                                         <span className="flex items-center gap-1 text-amber-400">
                                                             <Star size={14} className="fill-amber-400" />

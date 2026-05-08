@@ -68,9 +68,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
         dreamPages = (dreams ?? []).map((dream: any) => {
             const pv = dream.public_version || {};
-            const lastMod = pv.published_at || pv.publishedAt
-                ? new Date(pv.published_at || pv.publishedAt).toISOString()
-                : (dream.updated_at ? new Date(dream.updated_at).toISOString() : currentDate);
+            const rawDate = pv.published_at || pv.publishedAt || dream.updated_at;
+            let lastMod = currentDate;
+            if (rawDate) {
+                const parsed = new Date(rawDate);
+                if (!isNaN(parsed.getTime())) lastMod = parsed.toISOString();
+            }
 
             return {
                 url: `${BASE_URL}/${dream.seo_slug}`,

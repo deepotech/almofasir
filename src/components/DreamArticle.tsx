@@ -94,7 +94,8 @@ function getBulletAccent(heading: string): "gold" | "green" | "yellow" {
 }
 
 export default function DreamArticle({ dream, related = [] }: DreamArticleProps) {
-    const pv = dream?.publicVersion;
+    // Support both Supabase snake_case (public_version) and legacy camelCase (publicVersion)
+    const pv = dream?.public_version || dream?.publicVersion;
     const comprehensive = pv?.comprehensiveInterpretation;
     const structured = pv?.structuredInterpretation;
 
@@ -106,7 +107,8 @@ export default function DreamArticle({ dream, related = [] }: DreamArticleProps)
     const secondarySymbols: string[] = comprehensive?.secondarySymbols ?? [];
 
     const title = pv?.title ?? dream?.title ?? "تفسير الحلم";
-    const publishDate = pv?.publishedAt ?? dream?.createdAt;
+    // Supabase returns created_at; legacy Mongo returned createdAt
+    const publishDate = pv?.publishedAt ?? pv?.published_at ?? dream?.created_at ?? dream?.createdAt;
     const tags: string[] = dream?.tags ?? pv?.keywords ?? [];
 
     const legacyText = pv?.interpretation

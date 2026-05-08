@@ -153,8 +153,10 @@ export function normalizeDream(raw: any): NormalizedDream {
         return getDefaultDream();
     }
 
-    const id = String(raw._id || raw.id || '');
-    const pv = raw.publicVersion || {};
+    // Supabase uses `id` (UUID), not `_id` — prioritize accordingly
+    const id = String(raw.id || raw._id || '');
+    // Supabase snake_case field is `public_version`; legacy Mongo used `publicVersion`
+    const pv = raw.public_version || raw.publicVersion || {};
     const comprehensive = pv.comprehensiveInterpretation || {};
 
     // Title: try publicVersion.title → h1 → metaTitle → fallback
@@ -180,8 +182,8 @@ export function normalizeDream(raw: any): NormalizedDream {
         || pv.seoIntro
         || interpretation.substring(0, 200);
 
-    // Slug: seoSlug → id
-    const slug = raw.seoSlug || id;
+    // Slug: seo_slug (Supabase) → seoSlug (legacy) → id
+    const slug = raw.seo_slug || raw.seoSlug || id;
 
     return {
         id,
@@ -192,7 +194,8 @@ export function normalizeDream(raw: any): NormalizedDream {
         snippetSummary,
         mood: raw.mood || 'neutral',
         tags: Array.isArray(raw.tags) ? raw.tags : [],
-        date: pv.publishedAt || raw.createdAt || new Date().toISOString(),
+        // Supabase returns created_at; legacy Mongo returned createdAt
+        date: pv.publishedAt || pv.published_at || raw.created_at || raw.createdAt || new Date().toISOString(),
         primarySymbol: comprehensive.primarySymbol || undefined,
         sections: Array.isArray(comprehensive.sections) ? comprehensive.sections : undefined,
         faqs: Array.isArray(pv.faqs) ? pv.faqs : (Array.isArray(comprehensive.faqs) ? comprehensive.faqs : undefined)

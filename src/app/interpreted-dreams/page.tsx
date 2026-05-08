@@ -151,39 +151,16 @@ export default function InterpretedDreamsPage() {
                     {/* ── Error State ── */}
                     {pageState === 'error' && (
                         <div className="text-center py-20 animate-fadeIn">
-                            {errorMessage === 'db_unreachable' ? (
-                                <>
-                                    <div className="text-5xl mb-4">🔌</div>
-                                    <h3 className="text-xl font-bold text-white mb-2">قاعدة البيانات غير متاحة حالياً</h3>
-                                    <p className="text-[var(--color-text-muted)] mb-3 max-w-lg mx-auto text-sm leading-relaxed">
-                                        تعذّر الاتصال بـ MongoDB Atlas. على الأرجح أن عنوان IP الحالي غير مُدرج في قائمة السماح (IP Whitelist).
-                                    </p>
-                                    <div className="bg-[var(--color-bg-secondary)] border border-white/10 rounded-xl p-4 mb-6 text-right max-w-md mx-auto text-sm">
-                                        <p className="font-bold text-white mb-2">🛠 خطوات الإصلاح:</p>
-                                        <ol className="text-[var(--color-text-secondary)] space-y-1 list-decimal list-inside">
-                                            <li>افتح <span className="text-[var(--color-primary)]">cloud.mongodb.com</span></li>
-                                            <li>انتقل إلى <strong>Network Access</strong></li>
-                                            <li>اضغط <strong>Add IP Address</strong></li>
-                                            <li>اختر <strong>Allow Access from Anywhere</strong> (0.0.0.0/0) للتطوير</li>
-                                            <li>انتظر دقيقة ثم أعد المحاولة</li>
-                                        </ol>
-                                    </div>
-                                    <button onClick={handleRetry} className="btn btn-primary">
-                                        إعادة المحاولة
-                                    </button>
-                                </>
-                            ) : (
-                                <>
-                                    <div className="text-5xl mb-4">⚠️</div>
-                                    <h3 className="text-xl font-bold text-white mb-2">حدث خطأ أثناء تحميل البيانات</h3>
-                                    <p className="text-[var(--color-text-muted)] mb-6">
-                                        تعذّر الاتصال بقاعدة البيانات. تحقق من الاتصال أو حاول مجدداً.
-                                    </p>
-                                    <button onClick={handleRetry} className="btn btn-primary">
-                                        إعادة المحاولة
-                                    </button>
-                                </>
-                            )}
+                            <>
+                                <div className="text-5xl mb-4">⚠️</div>
+                                <h3 className="text-xl font-bold text-white mb-2">حدث خطأ أثناء تحميل البيانات</h3>
+                                <p className="text-[var(--color-text-muted)] mb-6">
+                                    تعذّر الاتصال بقاعدة البيانات. تحقق من الاتصال أو حاول مجدداً.
+                                </p>
+                                <button onClick={handleRetry} className="btn btn-primary">
+                                    إعادة المحاولة
+                                </button>
+                            </>
                         </div>
                     )}
 

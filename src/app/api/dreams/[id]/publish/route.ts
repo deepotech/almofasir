@@ -299,7 +299,7 @@ export async function POST(
             } catch (e) {}
         }
 
-        await dbConnect();
+        // [SUPABASE MIGRATION] dbConnect() removed — Supabase is used instead of MongoDB
 
         // 1. Authenticate
         let userId: string | undefined;
@@ -633,7 +633,8 @@ export async function POST(
                     }
 
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 5000);
+                    // 50 s is generous for GPT-4o-mini producing 900+ Arabic words
+                    const timeoutId = setTimeout(() => controller.abort(), 50000);
                     let response;
                     try {
                         response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -746,12 +747,11 @@ ${article.sections && article.sections[0] ? article.sections[0].content : ''}
 ${legacySymbolsList}
                     `.trim();
 
-                    dream.publicVersion = {
-                        // Also update top-level publicVersion fields for easier access/fallback
-                        title: article.h1 || article.metaTitle || dream.title, // H1 is priority for display title
+                    // ── Build public_version payload (snake_case for Supabase) ──
+                    const publicVersionPayload = {
+                        title: article.h1 || article.metaTitle || dream.title,
                         content: article.dream_text,
                         seoIntro: article.seoIntro,
-                        // Store the new comprehensive structure
                         comprehensiveInterpretation: {
                             primarySymbol: article.primarySymbol,
                             secondarySymbols: article.secondarySymbols,
@@ -762,34 +762,46 @@ ${legacySymbolsList}
                             internalLinkAnchors: article.internalLinkAnchors,
                             safetyNote: article.safetyNote
                         },
-                        // Keep legacy fields for backward compat
                         interpretation: formattedLegacyInterpretation,
                         faqs: article.faqs,
                         isAnonymous: true,
                         publishedAt: new Date().toISOString(),
                         qualityScore: calculatedQualityScore
                     };
-                    dream.is_public = true;
-                    dream.visibility_status = 'public';
-                    if (article.keywords) dream.tags = article.keywords;
+
+                    const updatedTags = article.keywords || dream.tags || [];
 
                     // ── Generate SEO slug for NEW article ──
-                    if (!dream.seo_slug) {
+                    let finalSlug = dream.seo_slug;
+                    if (!finalSlug) {
                         const dreamId = dream.id;
-                        const slugTitle = article.metaTitle || article.title || dream.content?.slice(0, 100) || '';
-                        dream.seo_slug = await generateUniqueSlug(slugTitle, dream.tags, dreamId);
-                        console.log(`[Publish] Generated seoSlug: "${dream.seo_slug}" for dream ${dreamId}`);
+                        const slugTitle = article.metaTitle || dream.content?.slice(0, 100) || '';
+                        finalSlug = await generateUniqueSlug(slugTitle, updatedTags, dreamId);
+                        console.log(`[Publish] Generated seo_slug: "${finalSlug}" for dream ${dreamId}`);
                     }
 
-                    await supabaseAdmin.from('dreams').upsert({
-                        ...dream,
-                        updated_at: new Date().toISOString()
-                    }).eq('id', dream.id);
+                    // ── Persist with correct snake_case column names ──
+                    const { error: upsertErr } = await supabaseAdmin
+                        .from('dreams')
+                        .update({
+                            public_version: publicVersionPayload,
+                            is_public: true,
+                            visibility_status: 'public',
+                            seo_slug: finalSlug,
+                            tags: updatedTags,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', dream.id);
+
+                    if (upsertErr) {
+                        console.error('[Publish] Failed to persist dream:', upsertErr);
+                        throw upsertErr;
+                    }
 
                     return NextResponse.json({
                         success: true,
                         message: `Dream published (attempt ${attempt <= MAX_RETRIES + 1 ? attempt : MAX_RETRIES + 1}, score: ${calculatedQualityScore})`,
-                        slug: dream.seo_slug,
+                        slug: finalSlug,
                         qualityScore: calculatedQualityScore,
                         validationPassed: lastValidation.valid,
                         totalWords: countArticleWords(article)
@@ -802,32 +814,41 @@ ${legacySymbolsList}
         }
 
         // Fallback or No API Key (Dev Mode)
-        console.warn('AI analysis skipped or failed. Publishing raw (Dev Mode).');
+        console.warn('[Publish] AI analysis skipped or failed. Publishing raw (fallback).');
 
-        dream.public_version = {
+        const fallbackPublicVersion = {
             title: dream.title || 'حلم مفسر',
             content: dream.content,
-            interpretation: dream.interpretation?.summary || 'تفسير عام',
+            interpretation: (dream.interpretation as any)?.summary || 'تفسير عام',
             isAnonymous: true,
             publishedAt: new Date().toISOString(),
             qualityScore: 60
         };
-        dream.is_public = true;
-        dream.visibility_status = 'public';
 
-        if (!dream.seo_slug) {
+        let fallbackSlug = dream.seo_slug;
+        if (!fallbackSlug) {
             const dreamId = dream.id;
             const slugTitle = dream.title || dream.content?.slice(0, 100) || '';
-            dream.seo_slug = await generateUniqueSlug(slugTitle, dream.tags || [], dreamId);
-            console.log(`[Publish/Fallback] Generated seoSlug: "${dream.seo_slug}" for dream ${dreamId}`);
+            fallbackSlug = await generateUniqueSlug(slugTitle, dream.tags || [], dreamId);
+            console.log(`[Publish/Fallback] Generated seo_slug: "${fallbackSlug}" for dream ${dreamId}`);
         }
 
-        await supabaseAdmin.from('dreams').upsert({
-            ...dream,
-            updated_at: new Date().toISOString()
-        }).eq('id', dream.id);
+        const { error: fallbackErr } = await supabaseAdmin
+            .from('dreams')
+            .update({
+                public_version: fallbackPublicVersion,
+                is_public: true,
+                visibility_status: 'public',
+                seo_slug: fallbackSlug,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', dream.id);
 
-        return NextResponse.json({ success: true, message: 'Dream published (fallback)', slug: dream.seoSlug });
+        if (fallbackErr) {
+            console.error('[Publish/Fallback] Failed to persist dream:', fallbackErr);
+        }
+
+        return NextResponse.json({ success: true, message: 'Dream published (fallback)', slug: fallbackSlug });
 
     } catch (error) {
         console.error('Error publishing dream:', error);
