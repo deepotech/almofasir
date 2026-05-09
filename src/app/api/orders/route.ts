@@ -255,6 +255,6 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
         console.error('[API] Order Global Error:', error);
-        return NextResponse.json({ success: false, error: 'Internal Error', data: null }, { status: 500 });
+        return NextResponse.json({ success: false, error: error.message || 'Internal Error', data: null }, { status: 500 });
     }
 }
