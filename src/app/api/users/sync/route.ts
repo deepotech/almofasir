@@ -63,6 +63,7 @@ export async function POST(req: Request) {
                 .update({
                     display_name: displayName || user.display_name,
                     role: finalRole,
+                    firebase_uid: uid,
                     updated_at: new Date().toISOString()
                 })
                 .eq('id', user.id)
