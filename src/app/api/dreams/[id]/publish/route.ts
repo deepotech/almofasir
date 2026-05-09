@@ -783,15 +783,25 @@ ${legacySymbolsList}
                     // ── Persist with correct snake_case column names ──
                     const { error: upsertErr } = await supabaseAdmin
                         .from('dreams')
-                        .update({
+                        .upsert({
+                            id: dream.id,
+                            user_id: dream.user_id,
+                            title: publicVersionPayload.title,
+                            content: dream.content,
+                            mood: dream.mood || 'neutral',
+                            social_status: dream.social_status || null,
+                            gender: dream.gender || null,
+                            is_recurring: dream.is_recurring || false,
+                            interpretation: dream.interpretation || { summary: 'تفسير آلي', aiGenerated: true, isPremium: false },
                             public_version: publicVersionPayload,
                             is_public: true,
                             visibility_status: 'public',
                             seo_slug: finalSlug,
                             tags: updatedTags,
+                            status: 'completed',
+                            created_at: dream.created_at || new Date().toISOString(),
                             updated_at: new Date().toISOString()
-                        })
-                        .eq('id', dream.id);
+                        }, { onConflict: 'id' });
 
                     if (upsertErr) {
                         console.error('[Publish] Failed to persist dream:', upsertErr);
