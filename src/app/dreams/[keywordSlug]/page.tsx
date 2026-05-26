@@ -9,7 +9,8 @@ import EngagementWidget from '@/components/seo/EngagementWidget';
 import Link from 'next/link';
 import { renderTextWithBoldAndLinks } from '@/lib/internalLinking';
 
-export const dynamic = 'force-dynamic';
+// ISR: programmatic pages rarely change — revalidate every 24 hours
+export const revalidate = 86400;
 
 interface PageProps {
     params: Promise<{ keywordSlug: string }>;
@@ -48,7 +49,7 @@ async function getOrGenerateContext(slug: string, hasAggregation: boolean) {
     // 1. Check Supabase cache
     const { data: cached } = await supabaseAdmin
         .from('programmatic_pages')
-        .select('*')
+        .select('keyword_slug, title, content, generated_at')
         .eq('keyword_slug', slug)
         .single();
 

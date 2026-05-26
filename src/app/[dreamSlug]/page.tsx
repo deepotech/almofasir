@@ -10,7 +10,8 @@ import Footer from '@/components/layout/Footer';
 import DreamArticle from '@/components/DreamArticle';
 import EngagementWidget from '@/components/seo/EngagementWidget';
 
-export const dynamic = 'force-dynamic';
+// ISR: revalidate every hour — reduces Supabase egress significantly
+export const revalidate = 3600;
 
 const BASE_URL = 'https://almofasir.com';
 
@@ -22,7 +23,7 @@ async function getDream(slugOrId: string) {
         // 1. Try seo_slug (canonical URL field)
         const { data: bySlug } = await supabaseAdmin
             .from('dreams')
-            .select('*')
+            .select('id, seo_slug, tags, mood, created_at, updated_at, public_version')
             .eq('seo_slug', slugOrId)
             .eq('visibility_status', 'public')
             .not('public_version', 'is', null)
@@ -35,7 +36,7 @@ async function getDream(slugOrId: string) {
         if (uuidPattern.test(slugOrId)) {
             const { data: byId } = await supabaseAdmin
                 .from('dreams')
-                .select('*')
+                .select('id, seo_slug, tags, mood, created_at, updated_at, public_version')
                 .eq('id', slugOrId)
                 .eq('visibility_status', 'public')
                 .not('public_version', 'is', null)

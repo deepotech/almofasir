@@ -9,7 +9,9 @@
  *   npx tsx scripts/validate-supabase.ts
  */
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+dotenv.config(); // fallback
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // ─── Terminal colours ──────────────────────────────────────────────────────────
