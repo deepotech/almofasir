@@ -321,6 +321,37 @@ INSERT INTO platform_settings (id)
 ON CONFLICT DO NOTHING;
 
 -- ============================================================
+-- 14. videos (TikTok & Educational Video Library)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS videos (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug              TEXT UNIQUE NOT NULL,
+  tiktok_url        TEXT NOT NULL,
+  tiktok_video_id   TEXT UNIQUE NOT NULL,
+  title             TEXT NOT NULL,
+  description       TEXT,
+  thumbnail_url     TEXT,
+  author_name       TEXT,
+  author_username   TEXT,
+  embed_html        TEXT,
+  duration          TEXT,
+  published_at      TIMESTAMPTZ DEFAULT NOW(),
+  is_published      BOOLEAN DEFAULT TRUE,
+  category          TEXT NOT NULL DEFAULT 'تفسير الرموز',
+  seo_title         TEXT,
+  seo_description   TEXT,
+  article_content   TEXT,
+  takeaways         TEXT[] DEFAULT '{}',
+  faq               JSONB DEFAULT '[]'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_videos_slug ON videos(slug);
+CREATE INDEX IF NOT EXISTS idx_videos_tiktok_id ON videos(tiktok_video_id);
+CREATE INDEX IF NOT EXISTS idx_videos_published ON videos(is_published, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_videos_category ON videos(category);
+
+-- ============================================================
 -- Auto-update updated_at via trigger function
 -- ============================================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -338,7 +369,7 @@ BEGIN
   FOREACH tbl IN ARRAY ARRAY[
     'users','dreams','symbols','page_metrics','programmatic_pages',
     'interpreters','interpreter_requests','dream_requests','bookings',
-    'transactions','notifications','platform_settings'
+    'transactions','notifications','platform_settings','videos'
   ]
   LOOP
     EXECUTE format(
@@ -349,3 +380,4 @@ BEGIN
     );
   END LOOP;
 END $$;
+

@@ -2,8 +2,10 @@ import { MetadataRoute } from 'next';
 import { getAllSymbols } from '@/lib/symbolsData';
 import { interpreters } from '@/lib/interpreters';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getAllPublishedVideoSlugs } from '@/lib/videos';
 
 const BASE_URL = 'https://almofasir.com';
+
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const currentDate = new Date().toISOString();
@@ -88,5 +90,29 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         console.error('[Sitemap] Error generating dynamic dream pages:', error);
     }
 
-    return [...staticPages, ...symbolPages, ...interpreterPages, ...dreamPages];
+    // Dynamic Video Pages — fetched from videos table / fallback
+    let videoPages: MetadataRoute.Sitemap = [];
+    try {
+        const videoSlugs = await getAllPublishedVideoSlugs();
+        const seenSlugs = new Set<string>();
+        videoPages = videoSlugs
+            .filter((v) => {
+                if (!v.slug || seenSlugs.has(v.slug)) return false;
+                seenSlugs.add(v.slug);
+                return true;
+            })
+            .map((v) => ({
+                url: `${BASE_URL}/learn/videos/${v.slug}`,
+                lastModified: v.updatedAt || currentDate,
+                changeFrequency: 'weekly' as const,
+                priority: 0.7,
+            }));
+        console.log(`[Sitemap] Generated ${videoPages.length} video pages`);
+    } catch (error) {
+        console.error('[Sitemap] Error generating video pages:', error);
+    }
+
+
+    return [...staticPages, ...symbolPages, ...interpreterPages, ...dreamPages, ...videoPages];
 }
+

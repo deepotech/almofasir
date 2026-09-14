@@ -17,8 +17,10 @@ import {
     X,
     Bell,
     Shield,
-    UserCheck
+    UserCheck,
+    Video
 } from 'lucide-react';
+
 
 export default function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -65,7 +67,9 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
         { icon: MessageSquare, label: 'الطلبات', href: '/admin/dashboard/orders' },
         { icon: Wallet, label: 'الإيرادات', href: '/admin/dashboard/revenue' },
         { icon: Star, label: 'التقييمات', href: '/admin/dashboard/reviews' },
+        { icon: Video, label: 'الفيديوهات', href: '/admin/dashboard/videos' },
         { icon: FileText, label: 'سجلات النظام', href: '/admin/dashboard/audit' },
+
         { icon: Settings, label: 'الإعدادات', href: '/admin/dashboard/settings' },
     ];
 
