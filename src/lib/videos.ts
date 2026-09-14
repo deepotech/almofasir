@@ -77,31 +77,107 @@ function filterFallbackVideos(
 /**
  * Fetch a single video by its slug
  */
-export async function getVideoBySlug(slug: string): Promise<Video | null> {
-    if (!slug) return null;
+/**
+ * Helper to normalize Arabic string for resilient slug matching
+ */
+function normalizeArabicSlug(str: string): string {
+    if (!str) return '';
+    return str
+        .toLowerCase()
+        // Remove leading English or Arabic numbers with separator (e.g. 1-, ١-)
+        .replace(/^[\d\u0660-\u0669]+[-_\s]+/, '')
+        // Normalize Alefs
+        .replace(/[أإآ]/g, 'ا')
+        // Normalize Taa Marbouta
+        .replace(/ة/g, 'ه')
+        // Normalize Yaa
+        .replace(/ى/g, 'ي')
+        // Convert hyphens, underscores to spaces
+        .replace(/[-_]+/g, ' ')
+        // Remove non-Arabic, non-alphanumeric chars
+        .replace(/[^\u0600-\u06FFa-zA-Z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/**
+ * Fetch a single video by its slug with URL decoding and fuzzy resilient matching
+ */
+export async function getVideoBySlug(rawSlug: string): Promise<Video | null> {
+    if (!rawSlug) return null;
+
+    let decodedSlug = rawSlug;
+    try {
+        decodedSlug = decodeURIComponent(rawSlug).trim();
+    } catch {
+        // keep rawSlug
+    }
 
     try {
-        const { data, error } = await supabaseAdmin
+        // 1. Try exact match with decoded slug
+        let { data, error } = await supabaseAdmin
             .from('videos')
             .select('*')
-            .eq('slug', slug)
+            .eq('slug', decodedSlug)
             .eq('is_published', true)
             .maybeSingle();
 
-        if (error) {
-            console.warn(`[videos.ts] Error fetching video by slug "${slug}", checking seed:`, error.message);
-            return fallbackVideos.find(v => v.slug === slug && v.isPublished) || null;
+        // 2. If not found and rawSlug was different, try rawSlug
+        if (!data && rawSlug !== decodedSlug) {
+            const res = await supabaseAdmin
+                .from('videos')
+                .select('*')
+                .eq('slug', rawSlug)
+                .eq('is_published', true)
+                .maybeSingle();
+            data = res.data;
         }
 
         if (data) {
             return rowToVideo(data as VideoRow);
         }
 
-        // Check fallback
-        return fallbackVideos.find(v => v.slug === slug && v.isPublished) || null;
+        // 3. Fallback to resilient normalized match against all published DB videos
+        const { data: allVideos } = await supabaseAdmin
+            .from('videos')
+            .select('*')
+            .eq('is_published', true);
+
+        if (allVideos && allVideos.length > 0) {
+            const targetNorm = normalizeArabicSlug(decodedSlug);
+            if (targetNorm.length >= 6) {
+                const matched = allVideos.find((row) => {
+                    const rowNorm = normalizeArabicSlug(row.slug);
+                    if (rowNorm === targetNorm) return true;
+                    // Check significant substring containment (min 12 chars)
+                    const coreTarget = targetNorm.slice(0, 30);
+                    const coreRow = rowNorm.slice(0, 30);
+                    return rowNorm.includes(coreTarget) || targetNorm.includes(coreRow);
+                });
+
+                if (matched) {
+                    return rowToVideo(matched as VideoRow);
+                }
+            }
+        }
+
+        // 4. Check fallback seed videos
+        const exactFallback = fallbackVideos.find(
+            (v) => (v.slug === decodedSlug || v.slug === rawSlug) && v.isPublished
+        );
+        if (exactFallback) return exactFallback;
+
+        const targetNorm = normalizeArabicSlug(decodedSlug);
+        const fuzzyFallback = fallbackVideos.find((v) => {
+            if (!v.isPublished) return false;
+            const seedNorm = normalizeArabicSlug(v.slug);
+            return seedNorm === targetNorm || seedNorm.includes(targetNorm) || targetNorm.includes(seedNorm);
+        });
+
+        return fuzzyFallback || null;
     } catch (err: any) {
-        console.warn(`[videos.ts] Exception fetching video "${slug}":`, err?.message);
-        return fallbackVideos.find(v => v.slug === slug && v.isPublished) || null;
+        console.warn(`[videos.ts] Exception fetching video "${rawSlug}":`, err?.message);
+        return fallbackVideos.find((v) => (v.slug === decodedSlug || v.slug === rawSlug) && v.isPublished) || null;
     }
 }
 

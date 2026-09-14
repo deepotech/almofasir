@@ -130,15 +130,30 @@ export function extractTikTokVideoId(url: string, embedHtml?: string): string {
  * Generate a clean URL slug from title and video ID
  */
 export function generateVideoSlug(title: string, videoId: string): string {
-    // Clean title
-    let slug = title
+    if (!title) return `video-${videoId || Date.now()}`;
+
+    // 1. Remove unicode directional marks & zero-width chars
+    let cleaned = title.replace(/[\u200B-\u200F\u202A-\u202E\uFEFF]/g, '');
+
+    // 2. Remove hashtags (e.g. #تفسير_الأحلام)
+    cleaned = cleaned.replace(/#[^\s#]+/g, '');
+
+    // 3. Keep only Arabic letters, English letters, numbers, hyphens and spaces
+    let slug = cleaned
         .toLowerCase()
         .replace(/[^\u0600-\u06FFa-zA-Z0-9\s-]/g, ' ')
         .trim()
         .replace(/\s+/g, '-')
-        .slice(0, 60);
+        .replace(/-+/g, '-');
 
-    // Remove leading/trailing dashes
+    // 4. Cut at word boundary before 65 chars
+    if (slug.length > 65) {
+        const truncated = slug.slice(0, 65);
+        const lastHyphen = truncated.lastIndexOf('-');
+        slug = lastHyphen > 20 ? truncated.slice(0, lastHyphen) : truncated;
+    }
+
+    // 5. Remove leading/trailing dashes
     slug = slug.replace(/^-+|-+$/g, '');
 
     if (!slug || slug.length < 3) {

@@ -17,7 +17,11 @@ export const revalidate = 1800; // ISR revalidate every 30 minutes
  */
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
     const { slug } = await params;
-    const video = await getVideoBySlug(slug);
+    let decodedSlug = slug;
+    try {
+        decodedSlug = decodeURIComponent(slug);
+    } catch {}
+    const video = await getVideoBySlug(decodedSlug);
 
     if (!video) {
         return {
@@ -80,7 +84,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function VideoDetailPage({ params }: PageProps) {
     const { slug } = await params;
-    const video = await getVideoBySlug(slug);
+    let decodedSlug = slug;
+    try {
+        decodedSlug = decodeURIComponent(slug);
+    } catch {}
+    const video = await getVideoBySlug(decodedSlug);
 
     if (!video) {
         notFound();
@@ -278,16 +286,24 @@ export default async function VideoDetailPage({ params }: PageProps) {
                             </section>
                         )}
 
-                        {/* Original Editorial Article Content */}
-                        {video.articleContent && (
-                            <section className="card mb-10 p-6 md:p-8">
-                                <h2 className="text-xl md:text-2xl font-bold mb-6 pb-3 border-b border-[var(--color-border)]">
-                                    📖 الشرح والتحليل المفصل
-                                </h2>
-                                <div className="space-y-5 text-muted leading-loose text-base md:text-lg">
-                                    {video.articleContent.split('\n\n').map((paragraph, idx) => {
+                        {/* Original Editorial Article Content or Default Guidance */}
+                        <section className="card mb-10 p-6 md:p-8">
+                            <h2 className="text-xl md:text-2xl font-bold mb-6 pb-3 border-b border-[var(--color-border)]">
+                                📖 الشرح والتحليل المفصل
+                            </h2>
+                            <div className="space-y-5 text-muted leading-loose text-base md:text-lg">
+                                {video.articleContent ? (
+                                    video.articleContent.split('\n\n').map((paragraph, idx) => {
                                         // Check if paragraph is heading
-                                        if (paragraph.startsWith('أولاً:') || paragraph.startsWith('ثانياً:') || paragraph.startsWith('ثالثاً:') || paragraph.startsWith('1.') || paragraph.startsWith('2.') || paragraph.startsWith('3.')) {
+                                        if (
+                                            paragraph.startsWith('أولاً:') ||
+                                            paragraph.startsWith('ثانياً:') ||
+                                            paragraph.startsWith('ثالثاً:') ||
+                                            paragraph.startsWith('رابعاً:') ||
+                                            paragraph.startsWith('1.') ||
+                                            paragraph.startsWith('2.') ||
+                                            paragraph.startsWith('3.')
+                                        ) {
                                             return (
                                                 <h3 key={idx} className="text-lg font-bold text-[var(--color-text)] mt-4">
                                                     {paragraph}
@@ -295,10 +311,19 @@ export default async function VideoDetailPage({ params }: PageProps) {
                                             );
                                         }
                                         return <p key={idx}>{paragraph}</p>;
-                                    })}
-                                </div>
-                            </section>
-                        )}
+                                    })
+                                ) : (
+                                    <div className="space-y-4">
+                                        <p>
+                                            يتناول هذا المقطع المرئي دلالات وتفاصيل <strong>&ldquo;{video.title}&rdquo;</strong>، وفق الأصول المعتبرة في علم تعبير الرؤى عند أئمة التفسير كابن سيرين والنابلسي.
+                                        </p>
+                                        <p>
+                                            تتنوع دلالات الرموز في المنام بحسب تفاصيل المشهد وسياقه، وحال الرائي في يقظته وما يحيط به من ظروف ومشاعر. يُنصح بمشاهدة المقطع أعلاه للوقوف على التوجيه المنهجي الدقيق لهذا الرمز.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
 
                         {/* Frequently Asked Questions */}
                         {video.faq && video.faq.length > 0 && (

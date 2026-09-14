@@ -18,6 +18,7 @@ import {
     RefreshCw,
     Search,
     AlertCircle,
+    Sparkles,
 } from 'lucide-react';
 
 export default function AdminVideosPage() {
@@ -26,6 +27,8 @@ export default function AdminVideosPage() {
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
     const [oembedLoading, setOembedLoading] = useState(false);
+    const [aiGenerating, setAiGenerating] = useState(false);
+    const [quickGeneratingId, setQuickGeneratingId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('الكل');
 
@@ -124,12 +127,84 @@ export default function AdminVideosPage() {
                     embedHtml: oData.embedHtml,
                     seoTitle: prev.seoTitle || `${oData.title} | المُفسِّر`,
                 }));
-                setFeedback({ type: 'success', message: 'تم استرجاع بيانات TikTok الرسمية بنجاح!' });
+                setFeedback({
+                    type: 'success',
+                    message: 'تم استرجاع بيانات TikTok بنجاح! يمكنك الآن الضغط على "توليد المحتوى بالذكاء الاصطناعي" لصياغة المقال والأسئلة الشائعة فوراً.',
+                });
             }
         } catch (err: any) {
             setFeedback({ type: 'error', message: 'حدث خطأ في الاتصال أثناء جلب بيانات TikTok.' });
         } finally {
             setOembedLoading(false);
+        }
+    };
+
+    // Handle Generate Content with AI
+    const handleGenerateAIContent = async (customTitle?: string, videoIdToSave?: string) => {
+        const titleToUse = customTitle || formData.title;
+        if (!titleToUse?.trim() || !user) {
+            setFeedback({
+                type: 'error',
+                message: 'يرجى إدخال عنوان المقطع أولاً حتى يتمكن الذكاء الاصطناعي من صياغة المحتوى.',
+            });
+            return;
+        }
+
+        setAiGenerating(true);
+        setFeedback(null);
+
+        try {
+            const token = await user.getIdToken();
+            const res = await fetch('/api/admin/videos/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    title: titleToUse.trim(),
+                    description: formData.description,
+                    category: formData.category,
+                    tiktokUrl: formData.tiktokUrl,
+                    autoSaveId: videoIdToSave,
+                }),
+            });
+
+            const result = await res.json();
+
+            if (!res.ok || !result.success) {
+                setFeedback({ type: 'error', message: result.error || 'فشل توليد المحتوى بالذكاء الاصطناعي.' });
+            } else {
+                const gen = result.generated;
+                setFormData((prev) => ({
+                    ...prev,
+                    title: gen.cleanTitle || prev.title,
+                    slug: gen.slug || prev.slug,
+                    category: gen.category || prev.category,
+                    seoTitle: gen.seoTitle || prev.seoTitle,
+                    seoDescription: gen.seoDescription || prev.seoDescription,
+                    description: gen.description || prev.description,
+                    articleContent: gen.articleContent || prev.articleContent,
+                    takeawaysText: (gen.takeaways || []).join('\n'),
+                    faqList: gen.faq || prev.faqList,
+                }));
+
+                setFeedback({
+                    type: 'success',
+                    message: videoIdToSave
+                        ? 'تم توليد وحفظ المقال والأسئلة الشائعة للمقطع بنجاح!'
+                        : 'تم توليد المقال والتحليل والأسئلة الشائعة بنجاح! راجع المحتوى ثم اضغط "حفظ الفيديو".',
+                });
+
+                if (videoIdToSave) {
+                    await fetchVideos();
+                }
+            }
+        } catch (err: any) {
+            setFeedback({ type: 'error', message: 'حدث خطأ في الاتصال أثناء توليد المحتوى.' });
+        } finally {
+            setAiGenerating(false);
+            setQuickGeneratingId(null);
         }
     };
 
@@ -434,9 +509,20 @@ export default function AdminVideosPage() {
                                                     <p className="font-bold text-white truncate max-w-xs md:max-w-md">
                                                         {v.title}
                                                     </p>
-                                                    <span className="text-xs text-gray-500" dir="ltr">
-                                                        ID: {v.tiktokVideoId}
-                                                    </span>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-xs text-gray-500" dir="ltr">
+                                                            ID: {v.tiktokVideoId}
+                                                        </span>
+                                                        {v.articleContent && v.articleContent.trim().length > 100 ? (
+                                                            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium">
+                                                                ✓ مقال مفصل
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-medium">
+                                                                ⚠️ بدون مقال
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>
@@ -474,6 +560,24 @@ export default function AdminVideosPage() {
                                         </td>
                                         <td className="p-4">
                                             <div className="flex items-center justify-center gap-2">
+                                                {(!v.articleContent || v.articleContent.trim().length < 100) && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setQuickGeneratingId(v.id);
+                                                            handleGenerateAIContent(v.title, v.id);
+                                                        }}
+                                                        disabled={quickGeneratingId === v.id}
+                                                        className="px-2.5 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 hover:text-purple-200 border border-purple-500/30 text-xs font-bold transition-colors flex items-center gap-1.5"
+                                                        title="توليد وحفظ المقال والأسئلة الشائعة بالذكاء الاصطناعي فوراً"
+                                                    >
+                                                        {quickGeneratingId === v.id ? (
+                                                            <Loader2 size={13} className="animate-spin" />
+                                                        ) : (
+                                                            <Sparkles size={13} />
+                                                        )}
+                                                        <span>توليد المحتوى</span>
+                                                    </button>
+                                                )}
                                                 {v.isPublished && (
                                                     <Link
                                                         href={`/learn/videos/${v.slug}`}
@@ -605,6 +709,39 @@ export default function AdminVideosPage() {
                                     </div>
                                 </div>
                             )}
+
+                            {/* AI Content Generation Assistant Banner */}
+                            <div className="bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-purple-950/40 p-4 rounded-xl border border-purple-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 flex-shrink-0">
+                                        <Sparkles size={20} />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-white text-sm">توليد المحتوى بالذكاء الاصطناعي (AI Editorial Generator)</h4>
+                                        <p className="text-xs text-purple-200/70">
+                                            صياغة مقال تعليمي شرعي مفصل، والنقاط المستفادة، والأسئلة الشائعة، وبيانات السيو تلقائياً وفق أصول ابن سيرين والنابلسي.
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => handleGenerateAIContent()}
+                                    disabled={aiGenerating || !formData.title}
+                                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold transition-all shadow-lg hover:shadow-purple-500/20 flex items-center gap-2 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                                >
+                                    {aiGenerating ? (
+                                        <>
+                                            <Loader2 size={16} className="animate-spin" />
+                                            <span>جاري التوليد بالذكاء الاصطناعي...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles size={16} />
+                                            <span>✨ توليد المحتوى بالذكاء الاصطناعي</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
 
                             {/* Basic Info */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
