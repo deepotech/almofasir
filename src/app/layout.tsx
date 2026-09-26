@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Cairo } from "next/font/google";
 import { GoogleAnalytics } from '@next/third-parties/google';
-import Script from "next/script";
 import "./globals.css";
 
 const cairo = Cairo({
@@ -54,6 +53,9 @@ export const metadata: Metadata = {
   verification: {
     google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
   },
+  other: {
+    'google-adsense-account': 'ca-pub-6331163447795368',
+  },
 };
 
 import { AuthProvider } from "@/context/AuthContext";
@@ -67,14 +69,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ar" dir="rtl" className={cairo.variable} suppressHydrationWarning>
-      <body className="flex flex-col items-center w-full min-h-screen overflow-x-hidden" suppressHydrationWarning>
-        <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""} />
-        <Script
+      <head>
+        <script
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6331163447795368"
           crossOrigin="anonymous"
-          strategy="afterInteractive"
         />
+      </head>
+      <body className="flex flex-col items-center w-full min-h-screen overflow-x-hidden" suppressHydrationWarning>
+        <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || ""} />
         <HomePageJsonLd />
         <StarBackground />
         <AuthProvider>
